@@ -1,11 +1,15 @@
 package com.example.gastikmp
 
 import androidx.compose.runtime.*
+import com.example.gastikmp.data.AuthRepository
+import com.example.gastikmp.navigation.MainScaffold
+import com.example.gastikmp.presentation.theme.GastiTheme
+import com.example.gastikmp.presentation.screens.LoginScreen
+import com.example.gastikmp.presentation.screens.RegisterScreen
 
 @Composable
 fun App() {
     GastiTheme {
-        // Estado de autenticación reactivo
         var isLoggedIn by remember { mutableStateOf(AuthRepository.currentUser != null) }
         var isRegistering by remember { mutableStateOf(false) }
 
