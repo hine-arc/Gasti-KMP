@@ -1,0 +1,146 @@
+-- ============================================================
+-- BASE DE DATOS GASTI
+-- MÓDULO DE GASTOS Y CATEGORÍAS
+-- ============================================================
+
+-- ============================================================
+-- TABLA: CATEGORIA
+-- ============================================================
+
+-- Esta tabla almacena las categorías disponibles.
+-- Cada categoría tiene un identificador y un nombre.
+-- También se almacena el correo del usuario propietario.
+
+CREATE TABLE Categoria (
+
+    -- Identificador único de la categoría.
+    id TEXT NOT NULL PRIMARY KEY,
+
+    -- Nombre de la categoría.
+    -- Ejemplos: Alimentación, Transporte, Salud.
+    nombre TEXT NOT NULL,
+
+    -- Correo del usuario propietario de la categoría.
+    usuario_email TEXT NOT NULL
+);
+
+
+-- ============================================================
+-- TABLA: GASTO
+-- ============================================================
+
+-- Esta tabla almacena todos los gastos registrados.
+-- Cada gasto pertenece a un usuario y una categoría.
+
+CREATE TABLE Gasto (
+
+    -- Identificador único del gasto.
+    id TEXT NOT NULL PRIMARY KEY,
+
+    -- Correo del usuario que registró el gasto.
+    usuario_email TEXT NOT NULL,
+
+    -- Descripción del gasto.
+    -- Ejemplo: Compra de mercado.
+    descripcion TEXT NOT NULL,
+
+    -- Valor monetario del gasto.
+    monto REAL NOT NULL,
+
+    -- Fecha del gasto en formato YYYY-MM-DD.
+    fecha TEXT NOT NULL,
+
+    -- Categoría a la que pertenece el gasto.
+    categoria_id TEXT NOT NULL,
+
+    -- Relación con la tabla Categoria.
+    FOREIGN KEY (categoria_id) REFERENCES Categoria(id)
+);
+
+
+-- ============================================================
+-- CONSULTAS PARA CATEGORÍAS
+-- ============================================================
+
+-- Registrar una categoría nueva.
+insertarCategoria:
+
+INSERT INTO Categoria (
+    id,
+    nombre,
+    usuario_email
+)
+VALUES (?, ?, ?);
+
+
+-- Obtener las categorías de un usuario.
+obtenerCategoriasPorUsuario:
+
+SELECT *
+FROM Categoria
+WHERE usuario_email = ?;
+
+
+-- Eliminar una categoría de un usuario.
+eliminarCategoria:
+
+DELETE FROM Categoria
+WHERE id = ?
+AND usuario_email = ?;
+
+
+-- ============================================================
+-- CONSULTAS PARA GASTOS
+-- ============================================================
+
+-- Registrar un gasto nuevo.
+insertarGasto:
+
+INSERT INTO Gasto (
+    id,
+    usuario_email,
+    descripcion,
+    monto,
+    fecha,
+    categoria_id
+)
+VALUES (?, ?, ?, ?, ?, ?);
+
+
+-- Obtener todos los gastos de un usuario.
+obtenerGastosPorUsuario:
+
+SELECT *
+FROM Gasto
+WHERE usuario_email = ?
+ORDER BY fecha DESC;
+
+
+-- Obtener un gasto específico.
+obtenerGastoPorId:
+
+SELECT *
+FROM Gasto
+WHERE id = ?
+AND usuario_email = ?;
+
+
+-- Actualizar un gasto existente.
+actualizarGasto:
+
+UPDATE Gasto
+SET
+    descripcion = ?,
+    monto = ?,
+    fecha = ?,
+    categoria_id = ?
+WHERE id = ?
+AND usuario_email = ?;
+
+
+-- Eliminar un gasto.
+eliminarGasto:
+
+DELETE FROM Gasto
+WHERE id = ?
+AND usuario_email = ?;
