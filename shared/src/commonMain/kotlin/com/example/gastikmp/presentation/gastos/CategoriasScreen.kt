@@ -1,0 +1,4 @@
+package com.example.gastikmp.presentation.gastos
+
+class CategoriasScreen {
+}

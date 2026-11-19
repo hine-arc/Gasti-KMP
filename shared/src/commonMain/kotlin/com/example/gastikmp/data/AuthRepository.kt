@@ -15,6 +15,10 @@ object AuthRepository {
 
     init {
         registeredUsers["jhoao@unicauca.edu.co"] = Pair("123456", "Jhoan Estudiante")
+        registeredUsers["nelsonsandoval@unicauca.edu.co"] = Pair("123456", "Stiven Estudiante")
+        registeredUsers["josemperafan@unicauca.edu.co"] = Pair("123456", "José Estudiante")
+
+
 
         val savedEmail = settings.getStringOrNull("logged_email")
         val savedName = settings.getStringOrNull("logged_name")

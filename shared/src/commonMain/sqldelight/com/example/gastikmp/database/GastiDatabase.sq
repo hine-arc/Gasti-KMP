@@ -144,3 +144,62 @@ eliminarGasto:
 DELETE FROM Gasto
 WHERE id = ?
 AND usuario_email = ?;
+-- ============================================================
+-- TABLA DE TRANSACCIONES: GASTOS E INGRESOS
+-- ============================================================
+
+CREATE TABLE Transaccion (
+    id TEXT NOT NULL PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    monto REAL NOT NULL,
+    fecha TEXT NOT NULL,
+    categoria_id TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK(tipo IN ('GASTO', 'INGRESO')),
+    FOREIGN KEY (categoria_id) REFERENCES Categoria(id)
+);
+
+-- Registrar una transacción.
+insertarTransaccion:
+INSERT INTO Transaccion (
+    id,
+    usuario_email,
+    descripcion,
+    monto,
+    fecha,
+    categoria_id,
+    tipo
+)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- Consultar transacciones de un usuario.
+obtenerTransaccionesPorUsuario:
+SELECT *
+FROM Transaccion
+WHERE usuario_email = ?
+ORDER BY fecha DESC;
+
+-- Consultar una transacción específica.
+obtenerTransaccionPorId:
+SELECT *
+FROM Transaccion
+WHERE id = ?
+AND usuario_email = ?;
+
+-- Actualizar una transacción.
+actualizarTransaccion:
+UPDATE Transaccion
+SET
+    descripcion = ?,
+    monto = ?,
+    fecha = ?,
+    categoria_id = ?,
+    tipo = ?
+WHERE id = ?
+AND usuario_email = ?;
+
+-- Eliminar una transacción.
+eliminarTransaccion:
+DELETE FROM Transaccion
+WHERE id = ?
+AND usuario_email = ?;
