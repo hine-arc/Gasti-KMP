@@ -1,7 +1,22 @@
+
 -- ============================================================
--- BASE DE DATOS GASTI
--- MÓDULO DE GASTOS, INGRESOS Y CATEGORÍAS
+-- BASE DE DATOS GASTI KMP
+-- USUARIOS, GASTOS, INGRESOS Y CATEGORIAS
 -- ============================================================
+
+
+-- ============================================================
+-- TABLA: USUARIO
+-- Almacena las cuentas registradas.
+-- Nunca guardar contraseñas en texto plano.
+-- ============================================================
+
+CREATE TABLE Usuario (
+    email TEXT NOT NULL PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL
+);
 
 
 -- ============================================================
@@ -48,10 +63,46 @@ CREATE TABLE Transaccion (
 
 
 -- ============================================================
+-- CONSULTAS PARA USUARIOS
+-- ============================================================
+
+-- Registrar un usuario nuevo.
+insertarUsuario:
+INSERT INTO Usuario (
+    email,
+    nombre,
+    password_hash,
+    password_salt
+)
+VALUES (?, ?, ?, ?);
+
+
+-- Buscar un usuario por su correo.
+obtenerUsuarioPorEmail:
+SELECT *
+FROM Usuario
+WHERE email = ?;
+
+
+-- Comprobar si existe una cuenta.
+existeUsuario:
+SELECT COUNT(*)
+FROM Usuario
+WHERE email = ?;
+
+
+-- Actualizar el nombre del usuario.
+actualizarNombreUsuario:
+UPDATE Usuario
+SET nombre = ?
+WHERE email = ?;
+
+
+-- ============================================================
 -- CONSULTAS PARA CATEGORIAS
 -- ============================================================
 
--- Registrar una categoría.
+-- Registrar una categoria.
 insertarCategoria:
 INSERT INTO Categoria (
     id,
@@ -61,14 +112,14 @@ INSERT INTO Categoria (
 VALUES (?, ?, ?);
 
 
--- Obtener categorías de un usuario.
+-- Obtener categorias de un usuario.
 obtenerCategoriasPorUsuario:
 SELECT *
 FROM Categoria
 WHERE usuario_email = ?;
 
 
--- Eliminar una categoría de un usuario.
+-- Eliminar una categoria de un usuario.
 eliminarCategoria:
 DELETE FROM Categoria
 WHERE id = ?
@@ -131,7 +182,7 @@ AND usuario_email = ?;
 -- CONSULTAS PARA TRANSACCIONES
 -- ============================================================
 
--- Registrar una transacción.
+-- Registrar una transaccion.
 insertarTransaccion:
 INSERT INTO Transaccion (
     id,
@@ -153,7 +204,7 @@ WHERE usuario_email = ?
 ORDER BY fecha DESC;
 
 
--- Obtener una transacción por identificador.
+-- Obtener una transaccion por identificador.
 obtenerTransaccionPorId:
 SELECT *
 FROM Transaccion
@@ -161,7 +212,7 @@ WHERE id = ?
 AND usuario_email = ?;
 
 
--- Actualizar una transacción.
+-- Actualizar una transaccion.
 actualizarTransaccion:
 UPDATE Transaccion
 SET
@@ -174,7 +225,7 @@ WHERE id = ?
 AND usuario_email = ?;
 
 
--- Eliminar una transacción.
+-- Eliminar una transaccion.
 eliminarTransaccion:
 DELETE FROM Transaccion
 WHERE id = ?

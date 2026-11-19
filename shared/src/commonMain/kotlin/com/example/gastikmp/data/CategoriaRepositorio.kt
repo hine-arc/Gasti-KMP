@@ -1,41 +1,142 @@
+
 package com.example.gastikmp.data
 
-// Importamos la base de datos generada por SQLDelight.
 import com.example.gastikmp.database.GastiDatabase
-
-// Importamos el modelo Categoria.
 import com.example.gastikmp.domain.gastos.Categoria
-
-// Importamos la clase para manejar los resultados.
 import com.example.gastikmp.domain.gastos.ResultadoOperacion
 
-// Repositorio encargado de administrar las categorías.
+/**
+ * GASTI KMP
+ *
+ * Repositorio de categorías.
+ *
+ * Incluye categorías predeterminadas para
+ * facilitar el registro de gastos e ingresos.
+ *
+ * Se conservan las operaciones originales:
+ * - Registrar categorías
+ * - Consultar categorías
+ * - Eliminar categorías
+ */
 class CategoriaRepositorio(
     private val database: GastiDatabase
 ) {
 
-    // Accedemos a las consultas SQL generadas por SQLDelight.
     private val consultas = database.gastiDatabaseQueries
 
+    /**
+     * Categorías iniciales de Gasti.
+     *
+     * Se crean cuando el usuario todavía
+     * no tiene ninguna categoría.
+     */
+    private val categoriasPredeterminadas = listOf(
+        "Alimentación",
+        "Transporte",
+        "Vivienda",
+        "Salud",
+        "Educación",
+        "Entretenimiento",
+        "Compras",
+        "Servicios",
+        "Salario",
+        "Trabajo",
+        "Regalos",
+        "Otros"
+    )
 
-    // =====================================================
-    // 1. REGISTRAR UNA CATEGORÍA
-    // =====================================================
+    /**
+     * Crear categorías iniciales para
+     * un usuario sin categorías.
+     */
+    private fun inicializarCategorias(
+        usuarioEmail: String
+    ) {
 
+        val correo = usuarioEmail.trim().lowercase()
+
+        if (correo.isBlank()) {
+            return
+        }
+
+        // Consultar categorías existentes.
+        val existentes = consultas
+            .obtenerCategoriasPorUsuario(
+                usuario_email = correo
+            )
+            .executeAsList()
+
+        // No reemplazar ni duplicar categorías
+        // si el usuario ya tiene registros.
+        if (existentes.isNotEmpty()) {
+            return
+        }
+
+        // Guardar todas las categorías iniciales.
+        database.transaction {
+
+            categoriasPredeterminadas.forEachIndexed {
+                    indice, nombre ->
+
+                val idCategoria =
+                    "default-$indice-$correo"
+
+                consultas.insertarCategoria(
+                    id = idCategoria,
+                    nombre = nombre,
+                    usuario_email = correo
+                )
+            }
+        }
+    }
+
+    /**
+     * Registrar una categoría personalizada.
+     */
     fun registrarCategoria(
         categoria: Categoria
     ): ResultadoOperacion<Unit> {
 
         return try {
 
-            // Insertamos la categoría en la base de datos.
+            val correo = categoria.usuarioEmail
+                .trim()
+                .lowercase()
+
+            val nombre = categoria.nombre.trim()
+
+            require(correo.isNotBlank()) {
+                "No hay un usuario válido."
+            }
+
+            require(nombre.isNotBlank()) {
+                "El nombre de la categoría es obligatorio."
+            }
+
+            // Comprobar nombres repetidos.
+            val categoriasActuales = consultas
+                .obtenerCategoriasPorUsuario(
+                    usuario_email = correo
+                )
+                .executeAsList()
+
+            val repetida = categoriasActuales.any {
+                it.nombre.equals(
+                    nombre,
+                    ignoreCase = true
+                )
+            }
+
+            require(!repetida) {
+                "Esta categoría ya existe."
+            }
+
             consultas.insertarCategoria(
                 id = categoria.id,
-                nombre = categoria.nombre,
-                usuario_email = categoria.usuarioEmail
+                nombre = nombre,
+                usuario_email = correo
             )
 
-            // Devolvemos el resultado exitoso.
             ResultadoOperacion.Exito(Unit)
 
         } catch (e: Exception) {
@@ -46,26 +147,34 @@ class CategoriaRepositorio(
         }
     }
 
-
-    // =====================================================
-    // 2. CONSULTAR LAS CATEGORÍAS DE UN USUARIO
-    // =====================================================
-
+    /**
+     * Consultar categorías de un usuario.
+     *
+     * Si todavía no tiene categorías,
+     * se crean las predeterminadas.
+     */
     fun obtenerCategoriasPorUsuario(
         usuarioEmail: String
     ): ResultadoOperacion<List<Categoria>> {
 
         return try {
 
-            // Consultamos las categorías del usuario.
+            val correo = usuarioEmail.trim().lowercase()
+
+            require(correo.isNotBlank()) {
+                "No hay un usuario autenticado."
+            }
+
+            // Crear categorías iniciales si hace falta.
+            inicializarCategorias(correo)
+
+            // Consultar la lista actualizada.
             val registros = consultas
                 .obtenerCategoriasPorUsuario(
-                    usuario_email = usuarioEmail
+                    usuario_email = correo
                 )
                 .executeAsList()
 
-            // Convertimos los registros de SQLDelight
-            // en objetos Categoria utilizando GastoMapper.
             val categorias = registros.map { registro ->
 
                 GastoMapper.convertirCategoria(
@@ -75,7 +184,6 @@ class CategoriaRepositorio(
                 )
             }
 
-            // Devolvemos la lista de categorías.
             ResultadoOperacion.Exito(categorias)
 
         } catch (e: Exception) {
@@ -86,11 +194,12 @@ class CategoriaRepositorio(
         }
     }
 
-
-    // =====================================================
-    // 3. ELIMINAR UNA CATEGORÍA
-    // =====================================================
-
+    /**
+     * Eliminar una categoría.
+     *
+     * Se comprueba que pertenezca
+     * al usuario indicado.
+     */
     fun eliminarCategoria(
         id: String,
         usuarioEmail: String
@@ -98,14 +207,13 @@ class CategoriaRepositorio(
 
         return try {
 
-            // Eliminamos la categoría verificando
-            // que pertenezca al usuario indicado.
+            val correo = usuarioEmail.trim().lowercase()
+
             consultas.eliminarCategoria(
                 id = id,
-                usuario_email = usuarioEmail
+                usuario_email = correo
             )
 
-            // Devolvemos el resultado exitoso.
             ResultadoOperacion.Exito(Unit)
 
         } catch (e: Exception) {

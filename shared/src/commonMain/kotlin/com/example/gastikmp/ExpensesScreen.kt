@@ -1,3 +1,4 @@
+
 package com.example.gastikmp.presentation
 
 import androidx.compose.foundation.layout.*
@@ -7,12 +8,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+
+import com.example.gastikmp.SelectorFechaGasti
 import com.example.gastikmp.database.GastiDatabase
 import com.example.gastikmp.domain.gastos.*
 import com.example.gastikmp.presentation.viewmodel.GastoViewModel
 
+/**
+ * GASTI KMP
+ *
+ * Pantalla de gastos e ingresos.
+ *
+ * Conserva las funciones de registro,
+ * edición, eliminación y categorías.
+ *
+ * Incluye calendario para elegir fecha.
+ */
 @Composable
-fun ExpensesScreen(database: GastiDatabase) {
+fun ExpensesScreen(
+    database: GastiDatabase
+) {
 
     val vm = remember(database) {
         GastoViewModel(database)
@@ -48,6 +63,7 @@ fun ExpensesScreen(database: GastiDatabase) {
             style = MaterialTheme.typography.headlineMedium
         )
 
+        // RESUMEN DE INGRESOS Y GASTOS
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -59,9 +75,7 @@ fun ExpensesScreen(database: GastiDatabase) {
                     modifier = Modifier.padding(12.dp)
                 ) {
                     Text("Ingresos")
-                    Text(
-                        "$ ${vm.obtenerTotalIngresos()}"
-                    )
+                    Text("$ ${vm.obtenerTotalIngresos()}")
                 }
             }
 
@@ -72,13 +86,12 @@ fun ExpensesScreen(database: GastiDatabase) {
                     modifier = Modifier.padding(12.dp)
                 ) {
                     Text("Gastos")
-                    Text(
-                        "$ ${vm.obtenerTotalGastos()}"
-                    )
+                    Text("$ ${vm.obtenerTotalGastos()}")
                 }
             }
         }
 
+        // BALANCE
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -86,6 +99,7 @@ fun ExpensesScreen(database: GastiDatabase) {
                 modifier = Modifier.padding(12.dp)
             ) {
                 Text("Balance")
+
                 Text(
                     "$ ${vm.obtenerBalance()}",
                     style = MaterialTheme.typography.headlineSmall
@@ -93,6 +107,7 @@ fun ExpensesScreen(database: GastiDatabase) {
             }
         }
 
+        // BOTONES PRINCIPALES
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -116,6 +131,7 @@ fun ExpensesScreen(database: GastiDatabase) {
             }
         }
 
+        // MENSAJES
         state.error?.let {
             Text(
                 text = it,
@@ -131,17 +147,20 @@ fun ExpensesScreen(database: GastiDatabase) {
         }
 
         Text(
-            "Movimientos registrados",
+            text = "Movimientos registrados",
             style = MaterialTheme.typography.titleLarge
         )
 
+        // LISTADO DE MOVIMIENTOS
         if (state.cargando) {
 
             CircularProgressIndicator()
 
         } else if (state.transacciones.isEmpty()) {
 
-            Text("Todavía no tienes movimientos registrados.")
+            Text(
+                "Todavía no tienes movimientos registrados."
+            )
 
         } else {
 
@@ -159,26 +178,34 @@ fun ExpensesScreen(database: GastiDatabase) {
                     ) {
 
                         Column(
-                            modifier = Modifier.padding(12.dp)
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
 
                             Text(
-                                movimiento.descripcion,
+                                text = movimiento.descripcion,
                                 style = MaterialTheme.typography.titleMedium
                             )
 
-                            Text("Fecha: ${movimiento.fecha}")
-
-                            Text("Tipo: ${movimiento.tipo}")
-
-                            Text("Valor: $ ${movimiento.monto}")
+                            Text(
+                                "Fecha: ${movimiento.fecha}"
+                            )
 
                             Text(
-                                "Categoría: ${
-                                    state.categorias.firstOrNull {
-                                        it.id == movimiento.categoriaId
-                                    }?.nombre ?: "Sin categoría"
-                                }"
+                                "Tipo: ${movimiento.tipo}"
+                            )
+
+                            Text(
+                                "Valor: $ ${movimiento.monto}"
+                            )
+
+                            val categoria = state.categorias
+                                .firstOrNull {
+                                    it.id == movimiento.categoriaId
+                                }?.nombre ?: "Sin categoría"
+
+                            Text(
+                                "Categoría: $categoria"
                             )
 
                             Row {
@@ -194,7 +221,9 @@ fun ExpensesScreen(database: GastiDatabase) {
 
                                 TextButton(
                                     onClick = {
-                                        vm.eliminarTransaccion(movimiento.id)
+                                        vm.eliminarTransaccion(
+                                            movimiento.id
+                                        )
                                     }
                                 ) {
                                     Text("Eliminar")
@@ -207,6 +236,7 @@ fun ExpensesScreen(database: GastiDatabase) {
         }
     }
 
+    // FORMULARIO DE REGISTRO Y EDICIÓN
     if (mostrarFormulario) {
 
         TransactionForm(
@@ -218,7 +248,12 @@ fun ExpensesScreen(database: GastiDatabase) {
                 movimientoEditar = null
             },
 
-            onSave = { descripcion, monto, fecha, categoriaId, tipo ->
+            onSave = {
+                    descripcion,
+                    monto,
+                    fecha,
+                    categoriaId,
+                    tipo ->
 
                 if (movimientoEditar == null) {
 
@@ -246,6 +281,7 @@ fun ExpensesScreen(database: GastiDatabase) {
         )
     }
 
+    // ADMINISTRAR CATEGORÍAS
     if (mostrarCategorias) {
 
         CategoryDialog(
@@ -258,6 +294,11 @@ fun ExpensesScreen(database: GastiDatabase) {
     }
 }
 
+/**
+ * Formulario de gastos e ingresos.
+ *
+ * La fecha se selecciona con calendario.
+ */
 @Composable
 private fun TransactionForm(
     categorias: List<Categoria>,
@@ -272,32 +313,38 @@ private fun TransactionForm(
     ) -> ResultadoOperacion<Unit>
 ) {
 
-    var descripcion by remember {
+    var descripcion by remember(initial) {
         mutableStateOf(initial?.descripcion ?: "")
     }
 
-    var monto by remember {
-        mutableStateOf(initial?.monto?.toString() ?: "")
+    var monto by remember(initial) {
+        mutableStateOf(
+            initial?.monto?.toString() ?: ""
+        )
     }
 
-    var fecha by remember {
+    var fecha by remember(initial) {
         mutableStateOf(initial?.fecha ?: "")
     }
 
-    var categoriaId by remember {
-        mutableStateOf(initial?.categoriaId ?: categorias.firstOrNull()?.id.orEmpty())
+    var categoriaId by remember(initial) {
+        mutableStateOf(
+            initial?.categoriaId
+                ?: categorias.firstOrNull()?.id.orEmpty()
+        )
     }
 
-    var tipo by remember {
-        mutableStateOf(initial?.tipo ?: TipoTransaccion.GASTO)
+    var tipo by remember(initial) {
+        mutableStateOf(
+            initial?.tipo ?: TipoTransaccion.GASTO
+        )
     }
 
-    var error by remember {
+    var error by remember(initial) {
         mutableStateOf<String?>(null)
     }
 
     AlertDialog(
-
         onDismissRequest = onDismiss,
 
         title = {
@@ -316,24 +363,48 @@ private fun TransactionForm(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
 
+                // DESCRIPCIÓN
                 OutlinedTextField(
                     value = descripcion,
-                    onValueChange = { descripcion = it },
-                    label = { Text("Descripción") }
+                    onValueChange = {
+                        descripcion = it
+                        error = null
+                    },
+                    label = {
+                        Text("Descripción")
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 )
 
+                // VALOR
                 OutlinedTextField(
                     value = monto,
-                    onValueChange = { monto = it },
-                    label = { Text("Valor") }
+                    onValueChange = {
+                        monto = it
+                        error = null
+                    },
+                    label = {
+                        Text("Valor")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
-                OutlinedTextField(
-                    value = fecha,
-                    onValueChange = { fecha = it },
-                    label = { Text("Fecha (AAAA-MM-DD)") }
+                // FECHA CON CALENDARIO
+                Text(
+                    text = "Fecha",
+                    style = MaterialTheme.typography.labelMedium
                 )
 
+                SelectorFechaGasti(
+                    fecha = fecha,
+                    onFechaSeleccionada = { nuevaFecha ->
+                        fecha = nuevaFecha
+                        error = null
+                    }
+                )
+
+                // TIPO DE MOVIMIENTO
                 Row {
 
                     FilterChip(
@@ -346,7 +417,9 @@ private fun TransactionForm(
                         }
                     )
 
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(
+                        modifier = Modifier.width(8.dp)
+                    )
 
                     FilterChip(
                         selected = tipo == TipoTransaccion.INGRESO,
@@ -359,6 +432,7 @@ private fun TransactionForm(
                     )
                 }
 
+                // SELECCIÓN DE CATEGORÍA
                 var expanded by remember {
                     mutableStateOf(false)
                 }
@@ -370,6 +444,7 @@ private fun TransactionForm(
                             expanded = true
                         }
                     ) {
+
                         Text(
                             categorias.firstOrNull {
                                 it.id == categoriaId
@@ -406,9 +481,10 @@ private fun TransactionForm(
                     )
                 }
 
+                // ERRORES DE VALIDACIÓN
                 error?.let {
                     Text(
-                        it,
+                        text = it,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -429,13 +505,24 @@ private fun TransactionForm(
 
                         error = "La descripción es obligatoria."
 
-                    } else if (valor == null || valor <= 0) {
+                    } else if (
+                        valor == null ||
+                        !valor.isFinite() ||
+                        valor <= 0
+                    ) {
 
                         error = "El valor debe ser mayor que cero."
 
-                    } else if (!Regex("\\d{4}-\\d{2}-\\d{2}").matches(fecha)) {
+                    } else if (
+                        !Regex("\\d{4}-\\d{2}-\\d{2}")
+                            .matches(fecha)
+                    ) {
 
-                        error = "Usa el formato AAAA-MM-DD."
+                        error = "Selecciona una fecha válida."
+
+                    } else if (categoriaId.isBlank()) {
+
+                        error = "Selecciona una categoría."
 
                     } else {
 
@@ -449,7 +536,9 @@ private fun TransactionForm(
                             )
                         ) {
 
-                            is ResultadoOperacion.Exito -> onDismiss()
+                            is ResultadoOperacion.Exito -> {
+                                onDismiss()
+                            }
 
                             is ResultadoOperacion.Error -> {
                                 error = resultado.mensaje
@@ -473,6 +562,9 @@ private fun TransactionForm(
     )
 }
 
+/**
+ * Ventana de administración de categorías.
+ */
 @Composable
 private fun CategoryDialog(
     vm: GastoViewModel,
@@ -489,7 +581,6 @@ private fun CategoryDialog(
     }
 
     AlertDialog(
-
         onDismissRequest = onDismiss,
 
         title = {
@@ -509,19 +600,22 @@ private fun CategoryDialog(
                     },
                     label = {
                         Text("Nombre de categoría")
-                    }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Button(
                     onClick = {
 
                         when (
-                            val resultado = vm.registrarCategoria(nombre)
+                            val resultado =
+                                vm.registrarCategoria(nombre)
                         ) {
 
                             is ResultadoOperacion.Exito -> {
                                 nombre = ""
-                                mensaje = "Categoría creada correctamente."
+                                mensaje =
+                                    "Categoría creada correctamente."
                             }
 
                             is ResultadoOperacion.Error -> {
@@ -537,20 +631,28 @@ private fun CategoryDialog(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween
                     ) {
 
-                        Text(categoria.nombre)
+                        Text(
+                            text = categoria.nombre,
+                            modifier = Modifier.weight(1f)
+                        )
 
                         TextButton(
                             onClick = {
 
                                 when (
-                                    val resultado = vm.eliminarCategoria(categoria.id)
+                                    val resultado =
+                                        vm.eliminarCategoria(
+                                            categoria.id
+                                        )
                                 ) {
 
                                     is ResultadoOperacion.Exito -> {
-                                        mensaje = "Categoría eliminada."
+                                        mensaje =
+                                            "Categoría eliminada."
                                     }
 
                                     is ResultadoOperacion.Error -> {

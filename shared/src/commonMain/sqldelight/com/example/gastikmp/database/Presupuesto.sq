@@ -1,0 +1,126 @@
+
+-- ============================================================
+-- GASTI KMP
+-- MODULO DE PRESUPUESTOS
+-- FASE 3 - JOSE MANUEL
+-- ============================================================
+
+-- TABLA DE PRESUPUESTOS
+-- Cada presupuesto pertenece a un usuario,
+-- una categoria y un periodo mensual.
+
+CREATE TABLE Presupuesto (
+    id TEXT NOT NULL PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    categoria_id TEXT NOT NULL,
+    limite REAL NOT NULL CHECK(limite > 0),
+    anio INTEGER NOT NULL,
+    mes INTEGER NOT NULL CHECK(mes BETWEEN 1 AND 12),
+    UNIQUE(usuario_email, categoria_id, anio, mes)
+);
+
+
+-- ============================================================
+-- CREAR PRESUPUESTO
+-- ============================================================
+
+insertarPresupuesto:
+INSERT INTO Presupuesto (
+    id,
+    usuario_email,
+    categoria_id,
+    limite,
+    anio,
+    mes
+)
+VALUES (?, ?, ?, ?, ?, ?);
+
+
+-- ============================================================
+-- CONSULTAR PRESUPUESTOS DE UN USUARIO
+-- ============================================================
+
+obtenerPresupuestosPorUsuario:
+SELECT *
+FROM Presupuesto
+WHERE usuario_email = ?
+ORDER BY anio DESC, mes DESC;
+
+
+-- ============================================================
+-- CONSULTAR PRESUPUESTOS DE UN MES
+-- ============================================================
+
+obtenerPresupuestosPorMes:
+SELECT *
+FROM Presupuesto
+WHERE usuario_email = ?
+AND anio = ?
+AND mes = ?;
+
+
+-- ============================================================
+-- CONSULTAR PRESUPUESTO POR ID
+-- ============================================================
+
+obtenerPresupuestoPorId:
+SELECT *
+FROM Presupuesto
+WHERE id = ?
+AND usuario_email = ?;
+
+
+-- ============================================================
+-- CONSULTAR PRESUPUESTO POR CATEGORIA Y MES
+-- ============================================================
+
+obtenerPresupuestoPorCategoria:
+SELECT *
+FROM Presupuesto
+WHERE usuario_email = ?
+AND categoria_id = ?
+AND anio = ?
+AND mes = ?;
+
+
+-- ============================================================
+-- ACTUALIZAR LIMITE DE PRESUPUESTO
+-- ============================================================
+
+actualizarPresupuesto:
+UPDATE Presupuesto
+SET limite = ?
+WHERE id = ?
+AND usuario_email = ?;
+
+
+-- ============================================================
+-- ELIMINAR PRESUPUESTO
+-- ============================================================
+
+eliminarPresupuesto:
+DELETE FROM Presupuesto
+WHERE id = ?
+AND usuario_email = ?;
+
+
+-- ============================================================
+-- CALCULAR TOTAL PRESUPUESTADO EN UN MES
+-- ============================================================
+
+obtenerTotalPresupuestadoPorMes:
+SELECT COALESCE(SUM(limite), 0.0)
+FROM Presupuesto
+WHERE usuario_email = ?
+AND anio = ?
+AND mes = ?;
+
+
+-- ============================================================
+-- CONTAR PRESUPUESTOS DE UN USUARIO
+-- ============================================================
+
+contarPresupuestosPorUsuario:
+SELECT COUNT(*)
+FROM Presupuesto
+WHERE usuario_email = ?;

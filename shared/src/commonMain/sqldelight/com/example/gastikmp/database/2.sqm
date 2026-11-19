@@ -1,0 +1,20 @@
+
+-- =====================================================
+-- GASTI KMP
+-- FASE 3 - JOSE MANUEL
+-- MIGRACION 2: MODULO DE PRESUPUESTOS
+-- Version 2 -> 3
+-- =====================================================
+
+-- Agrega la tabla de presupuestos.
+-- No elimina ni modifica las tablas existentes.
+
+CREATE TABLE Presupuesto (
+    id TEXT NOT NULL PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    categoria_id TEXT NOT NULL,
+    limite REAL NOT NULL CHECK(limite > 0),
+    anio INTEGER NOT NULL,
+    mes INTEGER NOT NULL CHECK(mes BETWEEN 1 AND 12),
+    UNIQUE(usuario_email, categoria_id, anio, mes)
+);

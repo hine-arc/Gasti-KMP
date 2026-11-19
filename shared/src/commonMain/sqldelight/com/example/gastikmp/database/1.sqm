@@ -1,0 +1,17 @@
+
+-- =====================================================
+-- GASTI KMP
+-- MIGRACION 1: PERSISTENCIA DE USUARIOS
+-- Version de base de datos: 1 -> 2
+-- =====================================================
+
+-- Esta migracion agrega la tabla Usuario.
+-- No elimina las tablas existentes de Stiven:
+-- Categoria, Gasto y Transaccion.
+
+CREATE TABLE IF NOT EXISTS Usuario (
+    email TEXT NOT NULL PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL
+);

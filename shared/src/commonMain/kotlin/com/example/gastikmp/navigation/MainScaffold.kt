@@ -4,17 +4,20 @@ package com.example.gastikmp.navigation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+
 import androidx.compose.ui.Modifier
 
 import com.example.gastikmp.Screen
@@ -25,8 +28,17 @@ import com.example.gastikmp.ProfileScreen
 import com.example.gastikmp.CreditsScreen
 
 import com.example.gastikmp.database.GastiDatabase
+
 import com.example.gastikmp.presentation.ExpensesScreen as ExpensesDatabaseScreen
 
+/**
+ * GASTI KMP - FASE 3
+ *
+ * Navegación principal multiplataforma.
+ *
+ * Home, Presupuestos, Estadísticas y Gastos
+ * comparten la misma base de datos.
+ */
 @Composable
 fun MainScaffold(
     database: GastiDatabase,
@@ -44,14 +56,15 @@ fun MainScaffold(
     val activeScreen = currentSubScreen ?: selectedTab
 
     Scaffold(
-
         bottomBar = {
 
             if (currentSubScreen == null) {
 
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    containerColor =
+                        MaterialTheme.colorScheme.surface,
+                    contentColor =
+                        MaterialTheme.colorScheme.primary
                 ) {
 
                     val screens = listOf(
@@ -65,7 +78,6 @@ fun MainScaffold(
                     screens.forEach { (screen, label) ->
 
                         NavigationBarItem(
-
                             selected = selectedTab == screen,
 
                             onClick = {
@@ -89,19 +101,32 @@ fun MainScaffold(
                                 Text(label)
                             },
 
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                indicatorColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
+                            colors =
+                                NavigationBarItemDefaults.colors(
+
+                                    selectedIconColor =
+                                        MaterialTheme.colorScheme.primary,
+
+                                    unselectedIconColor =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant,
+
+                                    selectedTextColor =
+                                        MaterialTheme.colorScheme.primary,
+
+                                    unselectedTextColor =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant,
+
+                                    indicatorColor =
+                                        MaterialTheme.colorScheme
+                                            .surfaceVariant
+                                )
                         )
                     }
                 }
             }
         }
-
     ) { innerPadding ->
 
         Box(
@@ -112,32 +137,61 @@ fun MainScaffold(
 
             when (activeScreen) {
 
+                // INICIO CON DATOS REALES
                 Screen.Home -> {
-                    HomeScreen()
+
+                    HomeScreen(
+                        database = database,
+
+                        onIrAGastos = {
+                            selectedTab = Screen.Expenses
+                        },
+
+                        onIrAPresupuestos = {
+                            selectedTab = Screen.Budget
+                        }
+                    )
                 }
 
+                // PRESUPUESTOS
                 Screen.Budget -> {
-                    BudgetScreen()
+
+                    BudgetScreen(
+                        database = database
+                    )
                 }
 
+                // ESTADÍSTICAS
                 Screen.Stats -> {
-                    StatsScreen()
+
+                    StatsScreen(
+                        database = database
+                    )
                 }
 
+                // GASTOS E INGRESOS
                 Screen.Expenses -> {
-                    ExpensesDatabaseScreen(database)
+
+                    ExpensesDatabaseScreen(
+                        database = database
+                    )
                 }
 
+                // PERFIL
                 Screen.Profile -> {
+
                     ProfileScreen(
                         onNavigateToCredits = {
                             currentSubScreen = Screen.Credits
                         },
+
                         onLogout = onLogout
                     )
                 }
 
+                // CRÉDITOS
                 Screen.Credits -> {
+
                     CreditsScreen(
                         onBack = {
                             currentSubScreen = null
@@ -145,8 +199,20 @@ fun MainScaffold(
                     )
                 }
 
+                // PANTALLA POR DEFECTO
                 else -> {
-                    HomeScreen()
+
+                    HomeScreen(
+                        database = database,
+
+                        onIrAGastos = {
+                            selectedTab = Screen.Expenses
+                        },
+
+                        onIrAPresupuestos = {
+                            selectedTab = Screen.Budget
+                        }
+                    )
                 }
             }
         }
