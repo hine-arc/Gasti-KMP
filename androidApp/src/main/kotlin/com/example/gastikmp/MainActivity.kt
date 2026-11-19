@@ -3,23 +3,22 @@ package com.example.gastikmp
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.tooling.preview.Preview
+import com.example.gastikmp.data.DatabaseDriverFactory
+import com.example.gastikmp.database.GastiDatabase
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        val driver = DatabaseDriverFactory(
+            applicationContext
+        ).createDriver()
+
+        val database = GastiDatabase(driver)
+
         setContent {
-            App()
+            App(database)
         }
     }
-}
-
-@Preview
-@Composable
-fun AppAndroidPreview() {
-    App()
 }
