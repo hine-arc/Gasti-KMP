@@ -21,20 +21,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * GASTI KMP - PASO 9.8
+ * GASTI KMP
  *
- * Inicio de sesión permanente mediante SQLDelight.
+ * Pantalla original de inicio de sesion.
  *
- * Utiliza AuthRepository.iniciarSesionPersistente()
- * para buscar el usuario y verificar su contraseña.
+ * Android y Desktop:
+ * utilizan AuthRepository y SQLDelight.
  *
- * No utiliza cuentas predeterminadas
- * ni almacenamiento temporal en memoria.
+ * Web JavaScript:
+ * puede proporcionar una funcion de
+ * autenticacion que utilice IndexedDB.
+ *
+ * El diseño es compartido entre plataformas.
  */
 @Composable
 fun LoginScreen(
     onNavigateToRegister: () -> Unit,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: () -> Unit,
+    autenticar: (suspend (String, String) -> Result<Unit>)? = null
 ) {
 
     var email by remember {
@@ -121,7 +125,7 @@ fun LoginScreen(
                         modifier = Modifier.height(20.dp)
                     )
 
-                    // CORREO ELECTRÓNICO
+                    // CORREO ELECTRONICO
                     Text(
                         text = "Correo electrónico",
                         style = MaterialTheme.typography.bodySmall,
@@ -212,7 +216,7 @@ fun LoginScreen(
                         )
                     }
 
-                    // ERROR DE AUTENTICACIÓN
+                    // MENSAJES DE ERROR
                     errorMessage?.let { mensaje ->
 
                         Spacer(
@@ -231,7 +235,7 @@ fun LoginScreen(
                         modifier = Modifier.height(16.dp)
                     )
 
-                    // INICIAR SESIÓN PERMANENTE
+                    // INICIO DE SESION
                     Button(
                         onClick = {
 
@@ -256,27 +260,40 @@ fun LoginScreen(
 
                                         try {
 
-                                            // La verificación PBKDF2
-                                            // se ejecuta fuera del hilo
-                                            // principal de Compose.
-                                            val resultado = withContext(
-                                                Dispatchers.Default
-                                            ) {
+                                            val resultado: Result<Unit> =
+                                                if (autenticar != null) {
 
-                                                AuthRepository
-                                                    .iniciarSesionPersistente(
-                                                        email = correo,
-                                                        pass = clave
+                                                    // Web:
+                                                    // usa la autenticacion
+                                                    // proporcionada por
+                                                    // la plataforma.
+                                                    autenticar(
+                                                        correo,
+                                                        clave
                                                     )
-                                            }
+
+                                                } else {
+
+                                                    // Android y Desktop:
+                                                    // conserva el flujo
+                                                    // SQLDelight original.
+                                                    withContext(
+                                                        Dispatchers.Default
+                                                    ) {
+
+                                                        AuthRepository
+                                                            .iniciarSesionPersistente(
+                                                                email = correo,
+                                                                pass = clave
+                                                            )
+                                                            .map { Unit }
+                                                    }
+                                                }
 
                                             if (resultado.isSuccess) {
 
-                                                // Borrar la contraseña
-                                                // del formulario.
                                                 password = ""
 
-                                                // Entrar a Gasti.
                                                 onLoginSuccess()
 
                                             } else {

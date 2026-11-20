@@ -32,17 +32,26 @@ import com.example.gastikmp.database.GastiDatabase
 import com.example.gastikmp.presentation.ExpensesScreen as ExpensesDatabaseScreen
 
 /**
- * GASTI KMP - FASE 3
+ * GASTI KMP
  *
- * Navegación principal multiplataforma.
+ * Navegacion principal compartida.
  *
- * Home, Presupuestos, Estadísticas y Gastos
- * comparten la misma base de datos.
+ * Android y Desktop:
+ * reciben una base de datos SQLDelight.
+ *
+ * Web:
+ * puede proporcionar contenido financiero
+ * mediante webContent, sin duplicar
+ * la barra de navegacion.
+ *
+ * Las pantallas originales de Android
+ * y Desktop permanecen sin cambios.
  */
 @Composable
 fun MainScaffold(
-    database: GastiDatabase,
-    onLogout: () -> Unit
+    database: GastiDatabase? = null,
+    onLogout: () -> Unit,
+    webContent: (@Composable (Screen) -> Unit)? = null
 ) {
 
     var selectedTab by remember {
@@ -137,47 +146,87 @@ fun MainScaffold(
 
             when (activeScreen) {
 
-                // INICIO CON DATOS REALES
+                // INICIO
                 Screen.Home -> {
 
-                    HomeScreen(
-                        database = database,
+                    if (database != null) {
 
-                        onIrAGastos = {
-                            selectedTab = Screen.Expenses
-                        },
+                        HomeScreen(
+                            database = database,
 
-                        onIrAPresupuestos = {
-                            selectedTab = Screen.Budget
-                        }
-                    )
+                            onIrAGastos = {
+                                selectedTab = Screen.Expenses
+                            },
+
+                            onIrAPresupuestos = {
+                                selectedTab = Screen.Budget
+                            }
+                        )
+
+                    } else {
+
+                        ContenidoWeb(
+                            screen = Screen.Home,
+                            webContent = webContent
+                        )
+                    }
                 }
 
                 // PRESUPUESTOS
                 Screen.Budget -> {
 
-                    BudgetScreen(
-                        database = database
-                    )
+                    if (database != null) {
+
+                        BudgetScreen(
+                            database = database
+                        )
+
+                    } else {
+
+                        ContenidoWeb(
+                            screen = Screen.Budget,
+                            webContent = webContent
+                        )
+                    }
                 }
 
-                // ESTADÍSTICAS
+                // ESTADISTICAS
                 Screen.Stats -> {
 
-                    StatsScreen(
-                        database = database
-                    )
+                    if (database != null) {
+
+                        StatsScreen(
+                            database = database
+                        )
+
+                    } else {
+
+                        ContenidoWeb(
+                            screen = Screen.Stats,
+                            webContent = webContent
+                        )
+                    }
                 }
 
                 // GASTOS E INGRESOS
                 Screen.Expenses -> {
 
-                    ExpensesDatabaseScreen(
-                        database = database
-                    )
+                    if (database != null) {
+
+                        ExpensesDatabaseScreen(
+                            database = database
+                        )
+
+                    } else {
+
+                        ContenidoWeb(
+                            screen = Screen.Expenses,
+                            webContent = webContent
+                        )
+                    }
                 }
 
-                // PERFIL
+                // PERFIL ORIGINAL
                 Screen.Profile -> {
 
                     ProfileScreen(
@@ -189,7 +238,7 @@ fun MainScaffold(
                     )
                 }
 
-                // CRÉDITOS
+                // CREDITOS ORIGINALES
                 Screen.Credits -> {
 
                     CreditsScreen(
@@ -202,19 +251,64 @@ fun MainScaffold(
                 // PANTALLA POR DEFECTO
                 else -> {
 
-                    HomeScreen(
-                        database = database,
+                    if (database != null) {
 
-                        onIrAGastos = {
-                            selectedTab = Screen.Expenses
-                        },
+                        HomeScreen(
+                            database = database,
 
-                        onIrAPresupuestos = {
-                            selectedTab = Screen.Budget
-                        }
-                    )
+                            onIrAGastos = {
+                                selectedTab = Screen.Expenses
+                            },
+
+                            onIrAPresupuestos = {
+                                selectedTab = Screen.Budget
+                            }
+                        )
+
+                    } else {
+
+                        ContenidoWeb(
+                            screen = Screen.Home,
+                            webContent = webContent
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Permite mostrar contenido financiero Web
+ * sin modificar la navegacion compartida.
+ *
+ * La implementacion real de las pantallas
+ * financieras Web se conectara despues.
+ */
+@Composable
+private fun ContenidoWeb(
+    screen: Screen,
+    webContent: (@Composable (Screen) -> Unit)?
+) {
+
+    if (webContent != null) {
+
+        webContent(screen)
+
+    } else {
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize(),
+            contentAlignment =
+                androidx.compose.ui.Alignment.Center
+        ) {
+
+            Text(
+                text = "Almacenamiento financiero Web pendiente",
+                color =
+                    MaterialTheme.colorScheme.onBackground
+            )
         }
     }
 }

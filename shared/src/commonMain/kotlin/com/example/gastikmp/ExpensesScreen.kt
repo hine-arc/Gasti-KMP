@@ -11,29 +11,61 @@ import androidx.compose.ui.unit.dp
 
 import com.example.gastikmp.SelectorFechaGasti
 import com.example.gastikmp.database.GastiDatabase
+import com.example.gastikmp.data.GastoDataSource
 import com.example.gastikmp.domain.gastos.*
 import com.example.gastikmp.presentation.viewmodel.GastoViewModel
+import com.example.gastikmp.presentation.viewmodel.GastoViewModelAsync
+import com.example.gastikmp.presentation.viewmodel.GastoUiState
+
+import kotlinx.coroutines.launch
 
 /**
  * GASTI KMP
  *
- * Pantalla de gastos e ingresos.
+ * Pantalla original de gastos e ingresos.
  *
- * Conserva las funciones de registro,
- * edición, eliminación y categorías.
+ * Android y Desktop:
+ * utilizan GastiDatabase y GastoViewModel.
  *
- * Incluye calendario para elegir fecha.
+ * Web:
+ * podrá utilizar GastoDataSource y
+ * GastoViewModelAsync.
+ *
+ * Se conserva la misma interfaz Compose.
  */
 @Composable
 fun ExpensesScreen(
-    database: GastiDatabase
+    database: GastiDatabase? = null,
+    dataSource: GastoDataSource? = null,
+    usuarioEmail: String = ""
 ) {
 
-    val vm = remember(database) {
-        GastoViewModel(database)
+    val vmOriginal = remember(database, dataSource) {
+        if (dataSource == null && database != null) {
+            GastoViewModel(database)
+        } else {
+            null
+        }
     }
 
-    val state = vm.uiState
+    val vmAsync = remember(dataSource, usuarioEmail) {
+        if (dataSource != null) {
+            GastoViewModelAsync(
+                dataSource = dataSource,
+                usuarioEmail = usuarioEmail
+            )
+        } else {
+            null
+        }
+    }
+
+    val state = vmAsync?.uiState
+        ?: vmOriginal?.uiState
+        ?: GastoUiState(
+            error = "La base de datos no está conectada."
+        )
+
+    val scope = rememberCoroutineScope()
 
     var mostrarFormulario by remember {
         mutableStateOf(false)
@@ -47,8 +79,11 @@ fun ExpensesScreen(
         mutableStateOf<Transaccion?>(null)
     }
 
-    LaunchedEffect(vm) {
-        vm.cargarDatos()
+    LaunchedEffect(vmOriginal, vmAsync) {
+        when {
+            vmAsync != null -> vmAsync.cargarDatos()
+            vmOriginal != null -> vmOriginal.cargarDatos()
+        }
     }
 
     Column(
@@ -71,22 +106,34 @@ fun ExpensesScreen(
             Card(
                 modifier = Modifier.weight(1f)
             ) {
+
                 Column(
                     modifier = Modifier.padding(12.dp)
                 ) {
                     Text("Ingresos")
-                    Text("$ ${vm.obtenerTotalIngresos()}")
+
+                    Text(
+                        "$ ${state.transacciones.filter {
+                            it.tipo == TipoTransaccion.INGRESO
+                        }.sumOf { it.monto }}"
+                    )
                 }
             }
 
             Card(
                 modifier = Modifier.weight(1f)
             ) {
+
                 Column(
                     modifier = Modifier.padding(12.dp)
                 ) {
                     Text("Gastos")
-                    Text("$ ${vm.obtenerTotalGastos()}")
+
+                    Text(
+                        "$ ${state.transacciones.filter {
+                            it.tipo == TipoTransaccion.GASTO
+                        }.sumOf { it.monto }}"
+                    )
                 }
             }
         }
@@ -95,13 +142,31 @@ fun ExpensesScreen(
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
+
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
+
+                val ingresos = state.transacciones
+                    .filter {
+                        it.tipo == TipoTransaccion.INGRESO
+                    }
+                    .sumOf {
+                        it.monto
+                    }
+
+                val gastos = state.transacciones
+                    .filter {
+                        it.tipo == TipoTransaccion.GASTO
+                    }
+                    .sumOf {
+                        it.monto
+                    }
+
                 Text("Balance")
 
                 Text(
-                    "$ ${vm.obtenerBalance()}",
+                    "$ ${ingresos - gastos}",
                     style = MaterialTheme.typography.headlineSmall
                 )
             }
@@ -179,7 +244,8 @@ fun ExpensesScreen(
 
                         Column(
                             modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement =
+                                Arrangement.spacedBy(4.dp)
                         ) {
 
                             Text(
@@ -221,9 +287,23 @@ fun ExpensesScreen(
 
                                 TextButton(
                                     onClick = {
-                                        vm.eliminarTransaccion(
-                                            movimiento.id
-                                        )
+
+                                        scope.launch {
+
+                                            when {
+                                                vmAsync != null -> {
+                                                    vmAsync.eliminarTransaccion(
+                                                        movimiento.id
+                                                    )
+                                                }
+
+                                                vmOriginal != null -> {
+                                                    vmOriginal.eliminarTransaccion(
+                                                        movimiento.id
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 ) {
                                     Text("Eliminar")
@@ -236,7 +316,7 @@ fun ExpensesScreen(
         }
     }
 
-    // FORMULARIO DE REGISTRO Y EDICIÓN
+    // FORMULARIO ORIGINAL DE REGISTRO Y EDICIÓN
     if (mostrarFormulario) {
 
         TransactionForm(
@@ -255,38 +335,104 @@ fun ExpensesScreen(
                     categoriaId,
                     tipo ->
 
-                if (movimientoEditar == null) {
+                when {
 
-                    vm.registrarTransaccion(
-                        descripcion,
-                        monto,
-                        fecha,
-                        categoriaId,
-                        tipo
-                    )
+                    vmAsync != null -> {
 
-                } else {
+                        if (movimientoEditar == null) {
 
-                    vm.actualizarTransaccion(
-                        movimientoEditar!!.copy(
-                            descripcion = descripcion,
-                            monto = monto,
-                            fecha = fecha,
-                            categoriaId = categoriaId,
-                            tipo = tipo
-                        )
+                            vmAsync.registrarTransaccion(
+                                descripcion,
+                                monto,
+                                fecha,
+                                categoriaId,
+                                tipo
+                            )
+
+                        } else {
+
+                            vmAsync.actualizarTransaccion(
+                                movimientoEditar!!.copy(
+                                    descripcion = descripcion,
+                                    monto = monto,
+                                    fecha = fecha,
+                                    categoriaId = categoriaId,
+                                    tipo = tipo
+                                )
+                            )
+                        }
+                    }
+
+                    vmOriginal != null -> {
+
+                        if (movimientoEditar == null) {
+
+                            vmOriginal.registrarTransaccion(
+                                descripcion,
+                                monto,
+                                fecha,
+                                categoriaId,
+                                tipo
+                            )
+
+                        } else {
+
+                            vmOriginal.actualizarTransaccion(
+                                movimientoEditar!!.copy(
+                                    descripcion = descripcion,
+                                    monto = monto,
+                                    fecha = fecha,
+                                    categoriaId = categoriaId,
+                                    tipo = tipo
+                                )
+                            )
+                        }
+                    }
+
+                    else -> ResultadoOperacion.Error(
+                        "La base de datos no está conectada."
                     )
                 }
             }
         )
     }
 
-    // ADMINISTRAR CATEGORÍAS
+    // ADMINISTRACIÓN DE CATEGORÍAS
     if (mostrarCategorias) {
 
         CategoryDialog(
-            vm = vm,
             categorias = state.categorias,
+
+            onRegistrar = { nombre ->
+
+                when {
+                    vmAsync != null ->
+                        vmAsync.registrarCategoria(nombre)
+
+                    vmOriginal != null ->
+                        vmOriginal.registrarCategoria(nombre)
+
+                    else -> ResultadoOperacion.Error(
+                        "La base de datos no está conectada."
+                    )
+                }
+            },
+
+            onEliminar = { id ->
+
+                when {
+                    vmAsync != null ->
+                        vmAsync.eliminarCategoria(id)
+
+                    vmOriginal != null ->
+                        vmOriginal.eliminarCategoria(id)
+
+                    else -> ResultadoOperacion.Error(
+                        "La base de datos no está conectada."
+                    )
+                }
+            },
+
             onDismiss = {
                 mostrarCategorias = false
             }
@@ -295,16 +441,17 @@ fun ExpensesScreen(
 }
 
 /**
- * Formulario de gastos e ingresos.
+ * Formulario original de gastos e ingresos.
  *
- * La fecha se selecciona con calendario.
+ * Ahora onSave admite una operación suspend,
+ * compatible con SQLDelight Web.
  */
 @Composable
 private fun TransactionForm(
     categorias: List<Categoria>,
     initial: Transaccion?,
     onDismiss: () -> Unit,
-    onSave: (
+    onSave: suspend (
         String,
         Double,
         String,
@@ -312,6 +459,12 @@ private fun TransactionForm(
         TipoTransaccion
     ) -> ResultadoOperacion<Unit>
 ) {
+
+    val scope = rememberCoroutineScope()
+
+    var guardando by remember(initial) {
+        mutableStateOf(false)
+    }
 
     var descripcion by remember(initial) {
         mutableStateOf(initial?.descripcion ?: "")
@@ -345,7 +498,11 @@ private fun TransactionForm(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!guardando) {
+                onDismiss()
+            }
+        },
 
         title = {
             Text(
@@ -360,10 +517,10 @@ private fun TransactionForm(
         text = {
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement =
+                    Arrangement.spacedBy(8.dp)
             ) {
 
-                // DESCRIPCIÓN
                 OutlinedTextField(
                     value = descripcion,
                     onValueChange = {
@@ -376,7 +533,6 @@ private fun TransactionForm(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // VALOR
                 OutlinedTextField(
                     value = monto,
                     onValueChange = {
@@ -390,7 +546,6 @@ private fun TransactionForm(
                     singleLine = true
                 )
 
-                // FECHA CON CALENDARIO
                 Text(
                     text = "Fecha",
                     style = MaterialTheme.typography.labelMedium
@@ -404,7 +559,6 @@ private fun TransactionForm(
                     }
                 )
 
-                // TIPO DE MOVIMIENTO
                 Row {
 
                     FilterChip(
@@ -432,7 +586,6 @@ private fun TransactionForm(
                     )
                 }
 
-                // SELECCIÓN DE CATEGORÍA
                 var expanded by remember {
                     mutableStateOf(false)
                 }
@@ -481,7 +634,6 @@ private fun TransactionForm(
                     )
                 }
 
-                // ERRORES DE VALIDACIÓN
                 error?.let {
                     Text(
                         text = it,
@@ -494,66 +646,94 @@ private fun TransactionForm(
         confirmButton = {
 
             Button(
-                enabled = categorias.isNotEmpty(),
+                enabled = categorias.isNotEmpty() && !guardando,
+
                 onClick = {
 
                     val valor = monto
                         .replace(",", ".")
                         .toDoubleOrNull()
 
-                    if (descripcion.isBlank()) {
+                    when {
 
-                        error = "La descripción es obligatoria."
+                        descripcion.isBlank() -> {
+                            error = "La descripción es obligatoria."
+                        }
 
-                    } else if (
                         valor == null ||
-                        !valor.isFinite() ||
-                        valor <= 0
-                    ) {
+                                !valor.isFinite() ||
+                                valor <= 0 -> {
 
-                        error = "El valor debe ser mayor que cero."
+                            error = "El valor debe ser mayor que cero."
+                        }
 
-                    } else if (
                         !Regex("\\d{4}-\\d{2}-\\d{2}")
-                            .matches(fecha)
-                    ) {
+                            .matches(fecha) -> {
 
-                        error = "Selecciona una fecha válida."
+                            error = "Selecciona una fecha válida."
+                        }
 
-                    } else if (categoriaId.isBlank()) {
+                        categoriaId.isBlank() -> {
+                            error = "Selecciona una categoría."
+                        }
 
-                        error = "Selecciona una categoría."
+                        else -> {
 
-                    } else {
+                            guardando = true
+                            error = null
 
-                        when (
-                            val resultado = onSave(
-                                descripcion,
-                                valor,
-                                fecha,
-                                categoriaId,
-                                tipo
-                            )
-                        ) {
+                            scope.launch {
 
-                            is ResultadoOperacion.Exito -> {
-                                onDismiss()
-                            }
+                                try {
 
-                            is ResultadoOperacion.Error -> {
-                                error = resultado.mensaje
+                                    when (
+                                        val resultado = onSave(
+                                            descripcion,
+                                            valor,
+                                            fecha,
+                                            categoriaId,
+                                            tipo
+                                        )
+                                    ) {
+
+                                        is ResultadoOperacion.Exito -> {
+                                            onDismiss()
+                                        }
+
+                                        is ResultadoOperacion.Error -> {
+                                            error = resultado.mensaje
+                                        }
+                                    }
+
+                                } catch (e: Exception) {
+
+                                    error = e.message
+                                        ?: "No se pudo guardar."
+
+                                } finally {
+
+                                    guardando = false
+                                }
                             }
                         }
                     }
                 }
             ) {
-                Text("Guardar")
+
+                Text(
+                    if (guardando) {
+                        "Guardando..."
+                    } else {
+                        "Guardar"
+                    }
+                )
             }
         },
 
         dismissButton = {
 
             TextButton(
+                enabled = !guardando,
                 onClick = onDismiss
             ) {
                 Text("Cancelar")
@@ -563,14 +743,20 @@ private fun TransactionForm(
 }
 
 /**
- * Ventana de administración de categorías.
+ * Ventana original de categorías.
+ *
+ * Las operaciones ahora admiten
+ * consultas asíncronas.
  */
 @Composable
 private fun CategoryDialog(
-    vm: GastoViewModel,
     categorias: List<Categoria>,
+    onRegistrar: suspend (String) -> ResultadoOperacion<Unit>,
+    onEliminar: suspend (String) -> ResultadoOperacion<Unit>,
     onDismiss: () -> Unit
 ) {
+
+    val scope = rememberCoroutineScope()
 
     var nombre by remember {
         mutableStateOf("")
@@ -580,8 +766,16 @@ private fun CategoryDialog(
         mutableStateOf<String?>(null)
     }
 
+    var procesando by remember {
+        mutableStateOf(false)
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!procesando) {
+                onDismiss()
+            }
+        },
 
         title = {
             Text("Administrar categorías")
@@ -590,7 +784,8 @@ private fun CategoryDialog(
         text = {
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement =
+                    Arrangement.spacedBy(8.dp)
             ) {
 
                 OutlinedTextField(
@@ -605,21 +800,39 @@ private fun CategoryDialog(
                 )
 
                 Button(
+                    enabled = !procesando,
                     onClick = {
 
-                        when (
-                            val resultado =
-                                vm.registrarCategoria(nombre)
-                        ) {
+                        procesando = true
 
-                            is ResultadoOperacion.Exito -> {
-                                nombre = ""
-                                mensaje =
-                                    "Categoría creada correctamente."
-                            }
+                        scope.launch {
 
-                            is ResultadoOperacion.Error -> {
-                                mensaje = resultado.mensaje
+                            try {
+
+                                when (
+                                    val resultado =
+                                        onRegistrar(nombre)
+                                ) {
+
+                                    is ResultadoOperacion.Exito -> {
+                                        nombre = ""
+                                        mensaje =
+                                            "Categoría creada correctamente."
+                                    }
+
+                                    is ResultadoOperacion.Error -> {
+                                        mensaje = resultado.mensaje
+                                    }
+                                }
+
+                            } catch (e: Exception) {
+
+                                mensaje = e.message
+                                    ?: "No se pudo crear la categoría."
+
+                            } finally {
+
+                                procesando = false
                             }
                         }
                     }
@@ -641,22 +854,39 @@ private fun CategoryDialog(
                         )
 
                         TextButton(
+                            enabled = !procesando,
+
                             onClick = {
 
-                                when (
-                                    val resultado =
-                                        vm.eliminarCategoria(
-                                            categoria.id
-                                        )
-                                ) {
+                                procesando = true
 
-                                    is ResultadoOperacion.Exito -> {
-                                        mensaje =
-                                            "Categoría eliminada."
-                                    }
+                                scope.launch {
 
-                                    is ResultadoOperacion.Error -> {
-                                        mensaje = resultado.mensaje
+                                    try {
+
+                                        when (
+                                            val resultado =
+                                                onEliminar(categoria.id)
+                                        ) {
+
+                                            is ResultadoOperacion.Exito -> {
+                                                mensaje =
+                                                    "Categoría eliminada."
+                                            }
+
+                                            is ResultadoOperacion.Error -> {
+                                                mensaje = resultado.mensaje
+                                            }
+                                        }
+
+                                    } catch (e: Exception) {
+
+                                        mensaje = e.message
+                                            ?: "No se pudo eliminar."
+
+                                    } finally {
+
+                                        procesando = false
                                     }
                                 }
                             }
@@ -675,6 +905,7 @@ private fun CategoryDialog(
         confirmButton = {
 
             TextButton(
+                enabled = !procesando,
                 onClick = onDismiss
             ) {
                 Text("Cerrar")

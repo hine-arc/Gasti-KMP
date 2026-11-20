@@ -1,77 +1,55 @@
 
-// Importamos las herramientas necesarias para configurar Kotlin Multiplatform.
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
-        import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-        plugins {
-
-            // Plugin principal de Kotlin Multiplatform.
-            alias(libs.plugins.kotlinMultiplatform)
-
-            // Plugin para configurar la biblioteca compartida de Android.
-            alias(libs.plugins.androidMultiplatformLibrary)
-
-            // Plugin para desarrollar interfaces con Compose Multiplatform.
-            alias(libs.plugins.composeMultiplatform)
-
-            // Plugin del compilador de Compose.
-            alias(libs.plugins.composeCompiler)
-
-            // Plugin de SQLDelight para generar código Kotlin desde archivos SQL.
-            alias(libs.plugins.sqldelight)
-        }
-
-
-// ======================================================
-// CONFIGURACIÓN DE KOTLIN MULTIPLATFORM
-// ======================================================
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.androidMultiplatformLibrary)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.sqldelight)
+}
 
 kotlin {
 
-    // Configuramos la plataforma JVM para Windows Desktop.
+    // WINDOWS DESKTOP
     jvm()
 
-    // Configuramos JavaScript para ejecutar la aplicación en navegadores.
+    // WEB JAVASCRIPT
     js {
         browser()
         binaries.executable()
     }
 
-    // Configuramos WebAssembly para navegadores compatibles.
+    // WEBASSEMBLY
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
         binaries.executable()
     }
 
-    // Configuración de Android.
+    // ANDROID
     android {
-
-        // Nombre del espacio de nombres del módulo compartido.
         namespace = "com.example.gastikmp.shared"
 
-        // Versión del SDK de compilación.
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        compileSdk =
+            libs.versions.android.compileSdk.get().toInt()
 
-        // Versión mínima de Android compatible.
-        minSdk = libs.versions.android.minSdk.get().toInt()
+        minSdk =
+            libs.versions.android.minSdk.get().toInt()
 
-        // Configuración del compilador de Kotlin para Android.
         compilerOptions {
             jvmTarget = JvmTarget.JVM_11
         }
 
-        // Permite utilizar recursos Android desde el módulo compartido.
         androidResources {
             enable = true
         }
 
-        // Configuración de las pruebas Android.
         withHostTest {
             isIncludeAndroidResources = true
         }
 
-        // Configuración de las pruebas en dispositivos Android.
         withDeviceTestBuilder {
             sourceSetTreeName = "test"
         }.configure {
@@ -80,40 +58,28 @@ kotlin {
         }
     }
 
-
-    // ======================================================
-    // CONFIGURACIÓN DE LOS CONJUNTOS DE CÓDIGO COMPARTIDO
-    // ======================================================
-
     sourceSets {
 
-        // --------------------------------------------------
         // ANDROID
-        // --------------------------------------------------
-
         androidMain.dependencies {
-
-            // Controlador de SQLDelight para Android.
-            // Permite utilizar SQLite en dispositivos Android.
             implementation(libs.sqldelight.android.driver)
-
-            // Herramientas para visualizar interfaces Compose.
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
         }
 
-
-        // --------------------------------------------------
-        // CÓDIGO COMPARTIDO
-        // --------------------------------------------------
-
+        // CODIGO COMPARTIDO
         commonMain.dependencies {
 
-            // Biblioteca principal de SQLDelight.
-            // Permite utilizar la base de datos desde Kotlin Multiplatform.
+            // SQLDelight
             implementation(libs.sqldelight.runtime)
 
-            // Dependencias de Compose Multiplatform.
+            // Funciones para consultas asincronas.
+            // Necesarias para el futuro controlador Web.
+            implementation(
+                "app.cash.sqldelight:async-extensions:2.3.2"
+            )
+
+            // Compose
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -121,86 +87,91 @@ kotlin {
             implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
 
-            // Dependencias para administrar los ViewModels.
-            implementation(libs.androidx.lifecycle.viewmodelCompose)
-            implementation(libs.androidx.lifecycle.runtimeCompose)
+            // Lifecycle
+            implementation(
+                libs.androidx.lifecycle.viewmodelCompose
+            )
 
-            // Biblioteca para almacenar configuraciones multiplataforma.
+            implementation(
+                libs.androidx.lifecycle.runtimeCompose
+            )
+
+            // Configuracion multiplataforma
             implementation(libs.multiplatformSettings)
         }
 
-
-        // --------------------------------------------------
-        // PRUEBAS DEL CÓDIGO COMPARTIDO
-        // --------------------------------------------------
-
+        // PRUEBAS COMPARTIDAS
         commonTest.dependencies {
-
-            // Biblioteca de pruebas de Kotlin.
             implementation(libs.kotlin.test)
         }
 
-
-        // --------------------------------------------------
-        // WINDOWS DESKTOP / JVM
-        // --------------------------------------------------
-
+        // WINDOWS DESKTOP
         jvmMain.dependencies {
-
-            // Controlador SQLite para aplicaciones Desktop.
-            // Permite guardar los gastos en una base de datos local.
             implementation(libs.sqldelight.sqlite.driver)
         }
 
-
-        // --------------------------------------------------
-        // JAVASCRIPT / WEB
-        // --------------------------------------------------
-
+        // WEB JAVASCRIPT
         jsMain.dependencies {
 
-            // Biblioteca para acceder a las funciones del navegador.
             implementation(libs.wrappers.browser)
+
+            // Controlador SQLDelight Web.
+            implementation(
+                "app.cash.sqldelight:web-worker-driver:2.3.2"
+            )
+
+            // Trabajador oficial SQL.js.
+            implementation(
+                npm(
+                    "@cashapp/sqldelight-sqljs-worker",
+                    "2.3.2"
+                )
+            )
+
+            // Motor SQLite del navegador.
+            implementation(
+                npm("sql.js", "1.8.0")
+            )
+
+            // Copia el archivo WebAssembly de SQL.js.
+            implementation(
+                devNpm("copy-webpack-plugin", "9.1.0")
+            )
         }
 
+        // WEBASSEMBLY
+        wasmJsMain.dependencies {
+            implementation(
+                "app.cash.sqldelight:web-worker-driver:2.3.2"
+            )
+        }
 
-        // --------------------------------------------------
-        // PRUEBAS DE ANDROID
-        // --------------------------------------------------
-
+        // PRUEBAS ANDROID
         getByName("androidDeviceTest").dependencies {
-
-            // Herramientas para ejecutar pruebas en dispositivos Android.
             implementation(libs.androidx.testRunner)
         }
     }
 }
 
-
-// ======================================================
-// CONFIGURACIÓN DE SQLDELIGHT
-// ======================================================
-
+// SQLDELIGHT
 sqldelight {
-
     databases {
-
-        // Creamos la base de datos principal de Gasti.
         create("GastiDatabase") {
 
-            // Paquete donde SQLDelight generará las clases Kotlin.
-            packageName.set("com.example.gastikmp.database")
+            packageName.set(
+                "com.example.gastikmp.database"
+            )
+
+            // IMPORTANTE:
+            // Todavia no activar generateAsync.
+            //
+            // Primero adaptaremos las consultas
+            // y repositorios compartidos.
         }
     }
 }
 
-
-// ======================================================
-// DEPENDENCIAS ADICIONALES
-// ======================================================
-
+// HERRAMIENTAS ANDROID
 dependencies {
-
-    // Herramientas de Compose para el entorno de ejecución Android.
     androidRuntimeClasspath(libs.compose.uiTooling)
 }

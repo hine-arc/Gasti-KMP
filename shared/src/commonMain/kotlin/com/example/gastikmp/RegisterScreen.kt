@@ -6,37 +6,42 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * GASTI KMP - PASO 9.7
+ * GASTI KMP
  *
- * Registro permanente de usuarios.
+ * Registro de usuarios con diseño compartido.
  *
- * Utiliza:
- * - AuthRepository.registrarPersistente()
- * - UsuarioRepositorio
- * - PasswordSecurity
- * - SQLDelight
+ * Android y Desktop:
+ * usan AuthRepository y SQLDelight.
  *
- * La contraseña no se guarda en texto plano.
+ * Web JavaScript:
+ * puede proporcionar una funcion de registro
+ * para usar IndexedDB y Web Crypto.
+ *
+ * El diseño visual es el mismo en
+ * todas las plataformas.
  */
 @Composable
 fun RegisterScreen(
     onNavigateBack: () -> Unit,
-    onRegisterSuccess: () -> Unit
+    onRegisterSuccess: () -> Unit,
+    registrar: (
+    suspend (String, String, String) -> Result<Unit>
+    )? = null
 ) {
 
     var name by remember {
@@ -157,7 +162,7 @@ fun RegisterScreen(
                         shape = RoundedCornerShape(12.dp)
                     )
 
-                    // CORREO
+                    // CORREO ELECTRONICO
                     Text(
                         text = "Correo electrónico",
                         style = MaterialTheme.typography.bodySmall,
@@ -204,8 +209,7 @@ fun RegisterScreen(
                         enabled = !isLoading,
                         visualTransformation =
                             if (mostrarPassword) {
-                                androidx.compose.ui.text.input
-                                    .VisualTransformation.None
+                                VisualTransformation.None
                             } else {
                                 PasswordVisualTransformation()
                             },
@@ -238,8 +242,7 @@ fun RegisterScreen(
                         enabled = !isLoading,
                         visualTransformation =
                             if (mostrarPassword) {
-                                androidx.compose.ui.text.input
-                                    .VisualTransformation.None
+                                VisualTransformation.None
                             } else {
                                 PasswordVisualTransformation()
                             },
@@ -266,7 +269,7 @@ fun RegisterScreen(
                         )
 
                         Text(
-                            "Mostrar contraseñas",
+                            text = "Mostrar contraseñas",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -286,7 +289,7 @@ fun RegisterScreen(
                         modifier = Modifier.height(8.dp)
                     )
 
-                    // BOTÓN DE REGISTRO PERMANENTE
+                    // BOTON DE REGISTRO
                     Button(
                         onClick = {
 
@@ -331,24 +334,45 @@ fun RegisterScreen(
                                     errorMessage = null
                                     isLoading = true
 
+                                    // Conservar una copia local de
+                                    // la contraseña durante el registro.
+                                    val clave = password
+
                                     scope.launch {
 
                                         try {
 
-                                            // PBKDF2 es costoso.
-                                            // Se procesa fuera del hilo
-                                            // principal de la interfaz.
-                                            val resultado = withContext(
-                                                Dispatchers.Default
-                                            ) {
+                                            val resultado: Result<Unit> =
+                                                if (registrar != null) {
 
-                                                AuthRepository
-                                                    .registrarPersistente(
-                                                        email = cleanEmail,
-                                                        pass = password,
-                                                        name = cleanName
+                                                    // WEB JAVASCRIPT:
+                                                    // el almacenamiento
+                                                    // se proporciona desde
+                                                    // WebAuthScreen.
+                                                    registrar(
+                                                        cleanEmail,
+                                                        clave,
+                                                        cleanName
                                                     )
-                                            }
+
+                                                } else {
+
+                                                    // ANDROID Y DESKTOP:
+                                                    // mantienen el registro
+                                                    // original en SQLDelight.
+                                                    withContext(
+                                                        Dispatchers.Default
+                                                    ) {
+
+                                                        AuthRepository
+                                                            .registrarPersistente(
+                                                                email = cleanEmail,
+                                                                pass = clave,
+                                                                name = cleanName
+                                                            )
+                                                            .map { Unit }
+                                                    }
+                                                }
 
                                             if (resultado.isSuccess) {
 
