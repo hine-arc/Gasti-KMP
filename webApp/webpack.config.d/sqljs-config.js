@@ -2,21 +2,18 @@
 /**
  * GASTI KMP
  *
- * Configuración de SQLDelight y SQL.js
- * para Web JavaScript.
- *
- * Esta configuración:
- *
- * 1. Prepara Webpack para SQL.js.
- * 2. Copia sql-wasm.wasm al navegador.
- * 3. Conserva las demás opciones
- *    existentes de Webpack.
- *
- * No modifica Android ni Desktop.
+ * Configuracion Webpack para:
+ * - SQLDelight
+ * - SQL.js
+ * - SQLite WebAssembly
+ * - Trabajador SQLite persistente
  */
 
-// Compatibilidad con módulos de Node.js
-// que no están disponibles en el navegador.
+const path = require("path");
+const fs = require("fs");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
+
+// Compatibilidad con SQL.js en navegador.
 
 config.resolve = config.resolve || {};
 
@@ -27,19 +24,60 @@ config.resolve.fallback = {
     crypto: false
 };
 
-// Copiar el motor SQLite WebAssembly
-// a los archivos públicos de Gasti Web.
+// Webpack ejecuta esta configuracion desde:
+//
+// build/js/packages/GastiKMP-webApp/
+//
+// Subimos cuatro niveles para llegar
+// a la raiz del proyecto Gasti-KMP.
 
-const CopyWebpackPlugin = require("copy-webpack-plugin");
+const raizProyecto = path.resolve(
+    __dirname,
+    "../../../.."
+);
+
+// Ubicacion real del trabajador creado
+// dentro del modulo webApp.
+
+const trabajadorGasti = path.join(
+    raizProyecto,
+    "webApp",
+    "src",
+    "jsMain",
+    "resources",
+    "gasti-sqlite-worker.js"
+);
+
+// Comprobar que el archivo existe.
+
+if (!fs.existsSync(trabajadorGasti)) {
+    throw new Error(
+        "No se encontro el trabajador SQLite en: " +
+        trabajadorGasti
+    );
+}
+
+// Copiar los archivos necesarios
+// al directorio publico Web.
 
 config.plugins.push(
     new CopyWebpackPlugin({
         patterns: [
             {
                 from: require.resolve(
+                    "sql.js/dist/sql-wasm.js"
+                ),
+                to: "sql-wasm.js"
+            },
+            {
+                from: require.resolve(
                     "sql.js/dist/sql-wasm.wasm"
                 ),
                 to: "sql-wasm.wasm"
+            },
+            {
+                from: trabajadorGasti,
+                to: "gasti-sqlite-worker.js"
             }
         ]
     })
