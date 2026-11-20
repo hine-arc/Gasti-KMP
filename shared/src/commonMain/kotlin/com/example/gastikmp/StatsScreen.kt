@@ -12,10 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
 import com.example.gastikmp.database.GastiDatabase
 import kotlin.math.abs
 
-// Colores de Gasti.
 private val statsVerde = Color(0xFF59DDA4)
 private val statsRojo = Color(0xFFFF8391)
 private val statsAmarillo = Color(0xFFFFC857)
@@ -28,7 +28,6 @@ private val statsMeses = listOf(
     "Diciembre"
 )
 
-// Modelo interno para realizar cálculos.
 private data class MovimientoStats(
     val fecha: String,
     val monto: Double,
@@ -38,14 +37,22 @@ private data class MovimientoStats(
 
 /**
  * ESTADISTICAS GASTI KMP
- * FASE 3 - JOSE MANUEL
  *
- * Consulta transacciones reales en SQLDelight.
- * Muestra semana, mes y año.
+ * Pantalla original compartida.
+ *
+ * Android y Desktop:
+ * utilizan GastiDatabase directamente.
+ *
+ * Web:
+ * recibe DatosHome desde consultas
+ * asincronas de WebHomeDataSource.
+ *
+ * Se conserva la interfaz Compose.
  */
 @Composable
 fun StatsScreen(
-    database: GastiDatabase? = null
+    database: GastiDatabase? = null,
+    datosWeb: DatosHome? = null
 ) {
 
     val correo = AuthRepository.currentUser
@@ -77,16 +84,45 @@ fun StatsScreen(
         mutableIntStateOf(0)
     }
 
-    // Consultamos los datos guardados.
-    val datos = remember(database, correo, revision) {
+    // =====================================
+    // DATOS FINANCIEROS
+    // =====================================
+
+    val datos = remember(
+        database,
+        correo,
+        revision,
+        datosWeb
+    ) {
 
         runCatching {
 
-            if (database == null || correo.isBlank()) {
+            if (datosWeb != null) {
+
+                val movimientos = datosWeb.movimientos.map {
+                    MovimientoStats(
+                        fecha = it.fecha.replace("/", "-"),
+                        monto = it.monto,
+                        categoriaId = it.categoriaId,
+                        tipo = it.tipo
+                    )
+                }
+
+                Pair(
+                    movimientos,
+                    datosWeb.categorias
+                )
+
+            } else if (
+                database == null ||
+                correo.isBlank()
+            ) {
+
                 Pair(
                     emptyList<MovimientoStats>(),
                     emptyMap<String, String>()
                 )
+
             } else {
 
                 val movimientos = database
@@ -123,7 +159,10 @@ fun StatsScreen(
 
     val errorDatos = datos.exceptionOrNull()?.message
 
-    // Filtrar movimientos para el período elegido.
+    // =====================================
+    // FILTRO POR PERIODO
+    // =====================================
+
     val movimientosPeriodo = movimientos.filter { mov ->
 
         val partes = mov.fecha.split("-")
@@ -136,7 +175,11 @@ fun StatsScreen(
             val m = partes[1].toIntOrNull()
             val d = partes[2].toIntOrNull()
 
-            if (a == null || m == null || d == null) {
+            if (
+                a == null ||
+                m == null ||
+                d == null
+            ) {
                 false
             } else {
 
@@ -144,9 +187,12 @@ fun StatsScreen(
 
                     "Año" -> a == anio
 
-                    "Mes" -> a == anio && m == mes
+                    "Mes" -> {
+                        a == anio && m == mes
+                    }
 
                     else -> {
+
                         val fechaMov = diasAbsolutosStats(
                             a, m, d
                         )
@@ -155,8 +201,6 @@ fun StatsScreen(
                             anio, mes, diaReferencia
                         )
 
-                        // Semana = últimos siete días,
-                        // incluyendo el día elegido.
                         fechaMov in
                                 (referencia - 6)..referencia
                     }
@@ -173,18 +217,51 @@ fun StatsScreen(
         it.tipo == "INGRESO"
     }
 
-    val totalGastado = gastos.sumOf { it.monto }
-    val totalIngresos = ingresos.sumOf { it.monto }
+    val totalGastado = gastos.sumOf {
+        it.monto
+    }
 
-    // Consultar límites presupuestados.
+    val totalIngresos = ingresos.sumOf {
+        it.monto
+    }
+
+    // =====================================
+    // PRESUPUESTOS DEL PERIODO
+    // =====================================
+
     val resultadoPresupuestos = remember(
-        database, correo, periodo, mes, anio, revision
+        database,
+        correo,
+        periodo,
+        mes,
+        anio,
+        revision,
+        datosWeb
     ) {
 
         runCatching {
 
-            if (database == null || correo.isBlank()) {
+            if (datosWeb != null) {
+
+                datosWeb.presupuestos
+                    .filter {
+                        it.anio == anio &&
+                                (
+                                        periodo == "Año" ||
+                                                it.mes == mes
+                                        )
+                    }
+                    .sumOf {
+                        it.limite
+                    }
+
+            } else if (
+                database == null ||
+                correo.isBlank()
+            ) {
+
                 0.0
+
             } else {
 
                 database.presupuestoQueries
@@ -197,53 +274,81 @@ fun StatsScreen(
                                                 it.mes.toInt() == mes
                                         )
                     }
-                    .sumOf { it.limite }
+                    .sumOf {
+                        it.limite
+                    }
             }
         }
     }
 
-    val totalPresupuesto = resultadoPresupuestos
-        .getOrDefault(0.0)
+    val totalPresupuesto =
+        resultadoPresupuestos.getOrDefault(0.0)
 
-    val errorPresupuesto = resultadoPresupuestos
-        .exceptionOrNull()?.message
+    val errorPresupuesto =
+        resultadoPresupuestos.exceptionOrNull()?.message
 
     val porcentaje = if (totalPresupuesto > 0.0) {
-        (totalGastado / totalPresupuesto * 100)
-            .toInt()
+        (
+                totalGastado /
+                        totalPresupuesto * 100
+                ).toInt()
     } else {
         0
     }
 
     val progreso = if (totalPresupuesto > 0.0) {
-        (totalGastado / totalPresupuesto)
-            .toFloat().coerceIn(0f, 1f)
+        (
+                totalGastado /
+                        totalPresupuesto
+                ).toFloat().coerceIn(0f, 1f)
     } else {
         0f
     }
 
-    // Agrupar gastos por categoría.
+    // =====================================
+    // GASTOS POR CATEGORIA
+    // =====================================
+
     val gastosCategoria = gastos
-        .groupBy { it.categoriaId }
-        .mapValues { entry ->
-            entry.value.sumOf { it.monto }
+        .groupBy {
+            it.categoriaId
+        }
+        .mapValues { entrada ->
+            entrada.value.sumOf {
+                it.monto
+            }
         }
         .toList()
-        .sortedByDescending { it.second }
+        .sortedByDescending {
+            it.second
+        }
 
-    // Agrupar gastos por fecha.
+    // =====================================
+    // GASTOS POR DIA
+    // =====================================
+
     val gastosPorDia = gastos
-        .groupBy { it.fecha }
-        .mapValues { entry ->
-            entry.value.sumOf { it.monto }
+        .groupBy {
+            it.fecha
+        }
+        .mapValues { entrada ->
+            entrada.value.sumOf {
+                it.monto
+            }
         }
         .toList()
-        .sortedBy { it.first }
+        .sortedBy {
+            it.first
+        }
 
-    // Comparación de los últimos cuatro meses.
+    // =====================================
+    // ULTIMOS CUATRO MESES
+    // =====================================
+
     val ultimosMeses = (3 downTo 0).map { retroceso ->
 
-        val indice = anio * 12 + (mes - 1) - retroceso
+        val indice =
+            anio * 12 + (mes - 1) - retroceso
 
         val a = indice / 12
         val m = indice % 12 + 1
@@ -255,10 +360,16 @@ fun StatsScreen(
                             "$a-${m.toString().padStart(2, '0')}-"
                         )
             }
-            .sumOf { it.monto }
+            .sumOf {
+                it.monto
+            }
 
         Triple(a, m, total)
     }
+
+    // =====================================
+    // INTERFAZ ORIGINAL
+    // =====================================
 
     LazyColumn(
         modifier = Modifier
@@ -267,7 +378,10 @@ fun StatsScreen(
                 MaterialTheme.colorScheme.background
             )
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+
+        verticalArrangement =
+            Arrangement.spacedBy(16.dp),
+
         contentPadding = PaddingValues(
             top = 24.dp,
             bottom = 30.dp
@@ -278,12 +392,14 @@ fun StatsScreen(
 
             Text(
                 "Estadísticas",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography
+                    .headlineMedium,
                 fontWeight = FontWeight.Bold
             )
         }
 
         // SEMANA / MES / AÑO
+
         item {
 
             Row(
@@ -291,26 +407,40 @@ fun StatsScreen(
                     Arrangement.spacedBy(8.dp)
             ) {
 
-                listOf("Semana", "Mes", "Año").forEach {
-                        opcion ->
+                listOf(
+                    "Semana",
+                    "Mes",
+                    "Año"
+                ).forEach { opcion ->
 
-                    val seleccionado = periodo == opcion
+                    val seleccionado =
+                        periodo == opcion
 
                     Button(
                         onClick = {
                             periodo = opcion
                         },
+
                         modifier = Modifier.weight(1f),
+
                         contentPadding = PaddingValues(
                             horizontal = 2.dp
                         ),
+
                         colors = ButtonDefaults.buttonColors(
                             containerColor =
-                                if (seleccionado) statsVerde
-                                else statsTarjeta,
+                                if (seleccionado) {
+                                    statsVerde
+                                } else {
+                                    statsTarjeta
+                                },
+
                             contentColor =
-                                if (seleccionado) Color.Black
-                                else Color.White
+                                if (seleccionado) {
+                                    Color.Black
+                                } else {
+                                    Color.White
+                                }
                         )
                     ) {
                         Text(opcion)
@@ -319,15 +449,18 @@ fun StatsScreen(
             }
         }
 
-        // SELECTOR DE PERÍODO
+        // SELECTOR DE PERIODO
+
         item {
 
             OutlinedButton(
                 onClick = {
                     mostrarPeriodo = true
                 },
+
                 modifier = Modifier.fillMaxWidth()
             ) {
+
                 Text(
                     when (periodo) {
 
@@ -338,7 +471,8 @@ fun StatsScreen(
                                     "${diaReferencia.toString().padStart(2, '0')}/" +
                                     "${mes.toString().padStart(2, '0')}/$anio"
 
-                        else -> "${statsMeses[mes - 1]} $anio"
+                        else ->
+                            "${statsMeses[mes - 1]} $anio"
                     }
                 )
             }
@@ -355,41 +489,67 @@ fun StatsScreen(
             }
         }
 
-        if (database == null) {
+        // ESTADOS DE CONEXION
+
+        if (
+            database == null &&
+            datosWeb == null
+        ) {
+
             item {
                 Text("No hay conexión con SQLDelight.")
             }
-        } else if (correo.isBlank()) {
+
+        } else if (
+            correo.isBlank() &&
+            datosWeb == null
+        ) {
+
             item {
-                Text("Inicia sesión para consultar estadísticas.")
+                Text(
+                    "Inicia sesión para consultar estadísticas."
+                )
             }
-        } else if (errorDatos != null ||
+
+        } else if (
+            errorDatos != null ||
             errorPresupuesto != null
         ) {
+
             item {
+
                 Text(
                     "Error al consultar datos: " +
                             (errorDatos ?: errorPresupuesto),
+
                     color = MaterialTheme.colorScheme.error
                 )
             }
+
         } else {
 
+            // =================================
             // RESUMEN
+            // =================================
+
             item {
 
                 StatsTarjeta {
 
                     Text(
                         "Resumen",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography
+                            .titleMedium,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
                         "Total gastado: " +
                                 monedaStats(totalGastado),
-                        style = MaterialTheme.typography.titleLarge,
+
+                        style = MaterialTheme.typography
+                            .titleLarge,
+
                         fontWeight = FontWeight.Bold,
                         color = statsRojo
                     )
@@ -397,6 +557,7 @@ fun StatsScreen(
                     Text(
                         "Ingresos: " +
                                 monedaStats(totalIngresos),
+
                         color = statsVerde
                     )
 
@@ -405,6 +566,7 @@ fun StatsScreen(
                         Text(
                             "Presupuesto: " +
                                     monedaStats(totalPresupuesto),
+
                             color = Color.LightGray
                         )
 
@@ -415,12 +577,17 @@ fun StatsScreen(
 
                         LinearProgressIndicator(
                             progress = { progreso },
+
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp),
+
                             color =
-                                if (porcentaje > 100) statsRojo
-                                else statsVerde
+                                if (porcentaje > 100) {
+                                    statsRojo
+                                } else {
+                                    statsVerde
+                                }
                         )
 
                     } else {
@@ -433,7 +600,10 @@ fun StatsScreen(
                 }
             }
 
-            // GRÁFICO POR FECHA
+            // =================================
+            // GRAFICO POR FECHA
+            // =================================
+
             item {
 
                 StatsTarjeta {
@@ -444,7 +614,10 @@ fun StatsScreen(
                         } else {
                             "Gasto por día"
                         },
-                        style = MaterialTheme.typography.titleMedium,
+
+                        style = MaterialTheme.typography
+                            .titleMedium,
+
                         fontWeight = FontWeight.Bold
                     )
 
@@ -457,35 +630,44 @@ fun StatsScreen(
 
                     } else {
 
-                        val grupos = if (periodo == "Año") {
+                        val grupos =
+                            if (periodo == "Año") {
 
-                            (1..12).map { numeroMes ->
+                                (1..12).map { numeroMes ->
 
-                                val suma = gastos.filter {
-                                    it.fecha.startsWith(
-                                        "$anio-" +
-                                                numeroMes.toString()
-                                                    .padStart(2, '0') +
-                                                "-"
-                                    )
-                                }.sumOf { it.monto }
+                                    val suma = gastos
+                                        .filter {
+                                            it.fecha.startsWith(
+                                                "$anio-" +
+                                                        numeroMes.toString()
+                                                            .padStart(2, '0') +
+                                                        "-"
+                                            )
+                                        }
+                                        .sumOf {
+                                            it.monto
+                                        }
 
-                                statsMeses[numeroMes - 1]
-                                    .take(3) to suma
+                                    statsMeses[numeroMes - 1]
+                                        .take(3) to suma
+                                }
+
+                            } else {
+
+                                gastosPorDia.map {
+                                    it.first to it.second
+                                }
                             }
 
-                        } else {
-
-                            gastosPorDia.map { registro ->
-                                registro.first to registro.second
+                        val maximo = grupos
+                            .maxOfOrNull {
+                                it.second
                             }
-                        }
+                            ?.coerceAtLeast(1.0)
+                            ?: 1.0
 
-                        val maximo = grupos.maxOfOrNull {
-                            it.second
-                        }?.coerceAtLeast(1.0) ?: 1.0
-
-                        grupos.forEach { (etiqueta, valor) ->
+                        grupos.forEach {
+                                (etiqueta, valor) ->
 
                             StatsBarra(
                                 nombre = etiqueta,
@@ -497,20 +679,25 @@ fun StatsScreen(
                 }
             }
 
-            // GRÁFICO POR CATEGORÍA
+            // =================================
+            // GRAFICO POR CATEGORIA
+            // =================================
+
             item {
 
                 StatsTarjeta {
 
                     Text(
                         "Por categoría",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography
+                            .titleMedium,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
                         "Distribución de tus gastos",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography
+                            .bodySmall,
                         color = Color.LightGray
                     )
 
@@ -524,15 +711,19 @@ fun StatsScreen(
                     } else {
 
                         val maximo = gastosCategoria
-                            .maxOf { it.second }
+                            .maxOf {
+                                it.second
+                            }
                             .coerceAtLeast(1.0)
 
                         gastosCategoria.forEach {
                                 (categoriaId, total) ->
 
                             StatsBarra(
-                                nombre = categorias[categoriaId]
-                                    ?: "Sin categoría",
+                                nombre =
+                                    categorias[categoriaId]
+                                        ?: "Sin categoría",
+
                                 valor = total,
                                 maximo = maximo
                             )
@@ -541,14 +732,18 @@ fun StatsScreen(
                 }
             }
 
-            // COMPARACIÓN MENSUAL
+            // =================================
+            // COMPARACION MENSUAL
+            // =================================
+
             item {
 
                 StatsTarjeta {
 
                     Text(
                         "Comparación mensual",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography
+                            .titleMedium,
                         fontWeight = FontWeight.Bold
                     )
 
@@ -556,18 +751,25 @@ fun StatsScreen(
                         "Últimos 4 meses hasta " +
                                 statsMeses[mes - 1] +
                                 " de $anio",
+
                         color = Color.LightGray,
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography
+                            .bodySmall
                     )
 
                     val maximo = ultimosMeses
-                        .maxOf { it.third }
+                        .maxOf {
+                            it.third
+                        }
                         .coerceAtLeast(1.0)
 
-                    ultimosMeses.forEach { (a, m, total) ->
+                    ultimosMeses.forEach {
+                            (a, m, total) ->
 
                         StatsBarra(
-                            nombre = "${statsMeses[m - 1].take(3)} $a",
+                            nombre =
+                                "${statsMeses[m - 1].take(3)} $a",
+
                             valor = total,
                             maximo = maximo
                         )
@@ -575,19 +777,25 @@ fun StatsScreen(
                 }
             }
 
-            // INSIGHT
+            // =================================
+            // ANALISIS DEL PERIODO
+            // =================================
+
             item {
 
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = Color(0xFF123C32)
                     ),
+
                     modifier = Modifier.fillMaxWidth(),
+
                     shape = RoundedCornerShape(18.dp)
                 ) {
 
                     Column(
                         modifier = Modifier.padding(18.dp),
+
                         verticalArrangement =
                             Arrangement.spacedBy(8.dp)
                     ) {
@@ -613,11 +821,14 @@ fun StatsScreen(
 
                             gastosCategoria.isNotEmpty() -> {
 
-                                val mayor = gastosCategoria.first()
+                                val mayor =
+                                    gastosCategoria.first()
 
                                 "Tu mayor gasto corresponde a " +
-                                        (categorias[mayor.first]
-                                            ?: "Sin categoría") +
+                                        (
+                                                categorias[mayor.first]
+                                                    ?: "Sin categoría"
+                                                ) +
                                         ", con " +
                                         monedaStats(mayor.second) +
                                         "."
@@ -637,6 +848,10 @@ fun StatsScreen(
         }
     }
 
+    // =====================================
+    // SELECTOR DE FECHA Y PERIODO
+    // =====================================
+
     if (mostrarPeriodo) {
 
         var mesTemporal by remember {
@@ -655,9 +870,11 @@ fun StatsScreen(
             onDismissRequest = {
                 mostrarPeriodo = false
             },
+
             title = {
                 Text("Seleccionar período")
             },
+
             text = {
 
                 Column(
@@ -667,9 +884,12 @@ fun StatsScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+
                         horizontalArrangement =
                             Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
 
                         IconButton(
@@ -702,38 +922,52 @@ fun StatsScreen(
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+
                             horizontalArrangement =
                                 Arrangement.spacedBy(4.dp)
                         ) {
 
                             for (col in 0..2) {
 
-                                val numero = fila * 3 + col + 1
+                                val numero =
+                                    fila * 3 + col + 1
 
                                 Button(
                                     onClick = {
                                         mesTemporal = numero
                                     },
+
                                     modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(2.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor =
-                                            if (mesTemporal == numero) {
-                                                statsVerde
-                                            } else {
-                                                statsTarjeta
-                                            },
-                                        contentColor =
-                                            if (mesTemporal == numero) {
-                                                Color.Black
-                                            } else {
-                                                Color.White
-                                            }
-                                    )
+
+                                    contentPadding =
+                                        PaddingValues(2.dp),
+
+                                    colors =
+                                        ButtonDefaults.buttonColors(
+
+                                            containerColor =
+                                                if (
+                                                    mesTemporal == numero
+                                                ) {
+                                                    statsVerde
+                                                } else {
+                                                    statsTarjeta
+                                                },
+
+                                            contentColor =
+                                                if (
+                                                    mesTemporal == numero
+                                                ) {
+                                                    Color.Black
+                                                } else {
+                                                    Color.White
+                                                }
+                                        )
                                 ) {
 
                                     Text(
-                                        statsMeses[numero - 1].take(3)
+                                        statsMeses[numero - 1]
+                                            .take(3)
                                     )
                                 }
                             }
@@ -746,9 +980,11 @@ fun StatsScreen(
 
                         Slider(
                             value = diaTemporal.toFloat(),
+
                             onValueChange = {
                                 diaTemporal = it.toInt()
                             },
+
                             valueRange = 1f..31f,
                             steps = 29
                         )
@@ -759,6 +995,7 @@ fun StatsScreen(
                     }
                 }
             },
+
             confirmButton = {
 
                 Button(
@@ -773,7 +1010,10 @@ fun StatsScreen(
                         )
 
                         diaReferencia =
-                            diaTemporal.coerceIn(1, diasMes)
+                            diaTemporal.coerceIn(
+                                1,
+                                diasMes
+                            )
 
                         mostrarPeriodo = false
                     }
@@ -781,6 +1021,7 @@ fun StatsScreen(
                     Text("Seleccionar")
                 }
             },
+
             dismissButton = {
 
                 TextButton(
@@ -805,7 +1046,9 @@ private fun StatsTarjeta(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+
         shape = RoundedCornerShape(18.dp),
+
         colors = CardDefaults.cardColors(
             containerColor = statsTarjeta
         )
@@ -813,8 +1056,10 @@ private fun StatsTarjeta(
 
         Column(
             modifier = Modifier.padding(18.dp),
+
             verticalArrangement =
                 Arrangement.spacedBy(12.dp),
+
             content = contenido
         )
     }
@@ -831,8 +1076,9 @@ private fun StatsBarra(
 ) {
 
     val progreso = if (maximo > 0.0) {
-        (valor / maximo).toFloat()
-            .coerceIn(0f, 1f)
+        (
+                valor / maximo
+                ).toFloat().coerceIn(0f, 1f)
     } else {
         0f
     }
@@ -861,9 +1107,11 @@ private fun StatsBarra(
 
         LinearProgressIndicator(
             progress = { progreso },
+
             modifier = Modifier
                 .fillMaxWidth()
                 .height(9.dp),
+
             color = statsVerde,
             trackColor = Color(0xFF30394B)
         )
@@ -871,13 +1119,17 @@ private fun StatsBarra(
 }
 
 /**
- * Formato de moneda COP.
+ * Formato de moneda colombiana.
  */
-private fun monedaStats(valor: Double): String {
+private fun monedaStats(
+    valor: Double
+): String {
 
-    val entero = abs(valor).toLong().toString()
+    val entero =
+        abs(valor).toLong().toString()
 
-    val numero = entero.reversed()
+    val numero = entero
+        .reversed()
         .chunked(3)
         .joinToString(".")
         .reversed()
@@ -892,9 +1144,15 @@ private fun monedaStats(valor: Double): String {
 /**
  * Funciones de fecha multiplataforma.
  */
-private fun bisiestoStats(anio: Int): Boolean {
+private fun bisiestoStats(
+    anio: Int
+): Boolean {
+
     return anio % 400 == 0 ||
-            (anio % 4 == 0 && anio % 100 != 0)
+            (
+                    anio % 4 == 0 &&
+                            anio % 100 != 0
+                    )
 }
 
 private fun diasMesStats(
@@ -918,10 +1176,11 @@ private fun diasAbsolutosStats(
 
     val y = (anio - 1).toLong()
 
-    var total = 365L * y +
-            y / 4 -
-            y / 100 +
-            y / 400
+    var total =
+        365L * y +
+                y / 4 -
+                y / 100 +
+                y / 400
 
     for (m in 1 until mes) {
         total += diasMesStats(anio, m)
