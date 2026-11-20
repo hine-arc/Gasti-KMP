@@ -13,9 +13,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+import com.example.gastikmp.data.PresupuestoDataSource
 import com.example.gastikmp.data.PresupuestoRepository
 import com.example.gastikmp.database.GastiDatabase
 import com.example.gastikmp.domain.Presupuesto
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -31,28 +37,40 @@ private val nombresMesesGasti = listOf(
     "Octubre", "Noviembre", "Diciembre"
 )
 
+private data class DatosPresupuestoPantalla(
+    val presupuestos: List<Presupuesto>,
+    val categorias: List<Pair<String, String>>,
+    val gastosPorCategoria: Map<String, Double>
+)
+
 /**
- * GASTI KMP - FASE 3
+ * GASTI KMP
  *
- * Pantalla de presupuestos.
+ * Pantalla original de presupuestos.
  *
- * Incluye:
- * - Selector visual de mes y año
- * - Creación de presupuestos
- * - Edición de límites
- * - Eliminación de presupuestos
- * - Gastos acumulados por categoría
- * - Alertas de límites
+ * Android y Desktop:
+ * utilizan GastiDatabase y
+ * PresupuestoRepository.
+ *
+ * Web:
+ * utiliza PresupuestoDataSource
+ * con consultas suspend.
+ *
+ * La interfaz Compose es compartida.
  */
 @Composable
 fun BudgetScreen(
-    database: GastiDatabase? = null
+    database: GastiDatabase? = null,
+    dataSource: PresupuestoDataSource? = null,
+    usuarioEmail: String = ""
 ) {
 
-    val correo = AuthRepository.currentUser
-        ?.email.orEmpty()
-        .trim()
-        .lowercase()
+    val scope = rememberCoroutineScope()
+
+    val correo = (
+            usuarioEmail.takeIf { it.isNotBlank() }
+                ?: AuthRepository.currentUser?.email.orEmpty()
+            ).trim().lowercase()
 
     val repositorio = remember(database) {
         database?.let {
@@ -60,9 +78,6 @@ fun BudgetScreen(
         }
     }
 
-    // Período inicial.
-    // Más adelante podremos obtenerlo
-    // automáticamente del reloj del sistema.
     var mesSeleccionado by remember {
         mutableIntStateOf(11)
     }
@@ -95,7 +110,15 @@ fun BudgetScreen(
         mutableStateOf("")
     }
 
-    val resultadoDatos = remember(
+    var procesando by remember {
+        mutableStateOf(false)
+    }
+
+    // =========================================
+    // ANDROID Y DESKTOP: CONSULTAS ORIGINALES
+    // =========================================
+
+    val resultadoOriginal = remember(
         database,
         correo,
         mesSeleccionado,
@@ -107,10 +130,10 @@ fun BudgetScreen(
 
             if (database == null || correo.isBlank()) {
 
-                Triple(
-                    emptyList<Presupuesto>(),
-                    emptyList<Pair<String, String>>(),
-                    emptyMap<String, Double>()
+                DatosPresupuestoPantalla(
+                    presupuestos = emptyList(),
+                    categorias = emptyList(),
+                    gastosPorCategoria = emptyMap()
                 )
 
             } else {
@@ -135,9 +158,10 @@ fun BudgetScreen(
                     .obtenerTransaccionesPorUsuario(correo)
                     .executeAsList()
 
-                val periodo = "$anioSeleccionado-" +
-                        mesSeleccionado.toString()
-                            .padStart(2, '0')
+                val periodo =
+                    "$anioSeleccionado-" +
+                            mesSeleccionado.toString()
+                                .padStart(2, '0')
 
                 val gastosPorCategoria = movimientos
                     .filter {
@@ -154,26 +178,128 @@ fun BudgetScreen(
                         }
                     }
 
-                Triple(
-                    presupuestos,
-                    categorias,
-                    gastosPorCategoria
+                DatosPresupuestoPantalla(
+                    presupuestos = presupuestos,
+                    categorias = categorias,
+                    gastosPorCategoria = gastosPorCategoria
                 )
             }
         }
     }
 
-    val presupuestos = resultadoDatos
-        .getOrNull()?.first.orEmpty()
+    // =========================================
+    // WEB: CONSULTAS ASINCRONAS
+    // =========================================
 
-    val categorias = resultadoDatos
-        .getOrNull()?.second.orEmpty()
+    var datosWeb by remember(
+        dataSource,
+        correo,
+        mesSeleccionado,
+        anioSeleccionado
+    ) {
+        mutableStateOf<DatosPresupuestoPantalla?>(null)
+    }
 
-    val gastosPorCategoria = resultadoDatos
-        .getOrNull()?.third.orEmpty()
+    var cargandoWeb by remember(dataSource, correo) {
+        mutableStateOf(dataSource != null)
+    }
 
-    val errorDatos = resultadoDatos
-        .exceptionOrNull()?.message
+    var errorWeb by remember(dataSource, correo) {
+        mutableStateOf<String?>(null)
+    }
+
+    LaunchedEffect(
+        dataSource,
+        correo,
+        mesSeleccionado,
+        anioSeleccionado,
+        revision
+    ) {
+
+        if (dataSource == null) {
+            return@LaunchedEffect
+        }
+
+        cargandoWeb = true
+        errorWeb = null
+
+        try {
+
+            require(correo.isNotBlank()) {
+                "Debes iniciar sesión."
+            }
+
+            val presupuestos = dataSource
+                .obtenerPresupuestosPorMes(
+                    usuarioEmail = correo,
+                    anio = anioSeleccionado,
+                    mes = mesSeleccionado
+                )
+                .getOrThrow()
+
+            val categorias = dataSource
+                .obtenerCategorias(correo)
+                .getOrThrow()
+
+            val gastos = dataSource
+                .obtenerGastosPorCategoria(
+                    usuarioEmail = correo,
+                    anio = anioSeleccionado,
+                    mes = mesSeleccionado
+                )
+                .getOrThrow()
+
+            datosWeb = DatosPresupuestoPantalla(
+                presupuestos = presupuestos,
+                categorias = categorias,
+                gastosPorCategoria = gastos
+            )
+
+            println(
+                "GASTI PRESUPUESTOS WEB: datos cargados"
+            )
+
+        } catch (error: CancellationException) {
+
+            throw error
+
+        } catch (error: Exception) {
+
+            errorWeb = error.message
+                ?: "No se pudieron consultar los presupuestos."
+
+            println(
+                "GASTI PRESUPUESTOS WEB: ERROR - $errorWeb"
+            )
+
+        } finally {
+
+            cargandoWeb = false
+        }
+    }
+
+    val datos = if (dataSource != null) {
+        datosWeb
+    } else {
+        resultadoOriginal.getOrNull()
+    }
+
+    val errorDatos = if (dataSource != null) {
+        errorWeb
+    } else {
+        resultadoOriginal.exceptionOrNull()?.message
+    }
+
+    val presupuestos = datos?.presupuestos.orEmpty()
+
+    val categorias = datos?.categorias.orEmpty()
+
+    val gastosPorCategoria =
+        datos?.gastosPorCategoria.orEmpty()
+
+    val conexionDisponible =
+        correo.isNotBlank() &&
+                (dataSource != null || database != null)
 
     val totalPresupuestado = presupuestos.sumOf {
         it.limite
@@ -186,8 +312,7 @@ fun BudgetScreen(
     val disponible = totalPresupuestado - totalGastado
 
     val porcentaje = if (totalPresupuestado > 0) {
-        (totalGastado / totalPresupuestado * 100)
-            .toInt()
+        (totalGastado / totalPresupuestado * 100).toInt()
     } else {
         0
     }
@@ -200,6 +325,10 @@ fun BudgetScreen(
         0f
     }
 
+    // =========================================
+    // PANTALLA ORIGINAL
+    // =========================================
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -207,7 +336,10 @@ fun BudgetScreen(
                 MaterialTheme.colorScheme.background
             )
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+
+        verticalArrangement =
+            Arrangement.spacedBy(16.dp),
+
         contentPadding = PaddingValues(
             top = 24.dp,
             bottom = 28.dp
@@ -233,7 +365,10 @@ fun BudgetScreen(
             }
         }
 
-        // SELECTOR DE MES Y AÑO
+        // =====================================
+        // SELECTOR DE PERIODO
+        // =====================================
+
         item {
 
             OutlinedButton(
@@ -245,7 +380,7 @@ fun BudgetScreen(
             ) {
 
                 Text(
-                    text = "📅 " +
+                    "📅 " +
                             nombresMesesGasti[mesSeleccionado - 1] +
                             " $anioSeleccionado"
                 )
@@ -258,12 +393,16 @@ fun BudgetScreen(
             }
         }
 
-        // RESUMEN FINANCIERO
+        // =====================================
+        // RESUMEN DE PRESUPUESTOS
+        // =====================================
+
         item {
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
+
                 colors = CardDefaults.cardColors(
                     containerColor = Color(0xFF302B1D)
                 )
@@ -271,11 +410,14 @@ fun BudgetScreen(
 
                 Column(
                     modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+
+                    verticalArrangement =
+                        Arrangement.spacedBy(12.dp)
                 ) {
 
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
 
                         Column(
@@ -306,9 +448,12 @@ fun BudgetScreen(
                                 mensaje = ""
                                 mostrarFormulario = true
                             },
-                            enabled = database != null &&
-                                    correo.isNotBlank() &&
-                                    errorDatos == null
+
+                            enabled =
+                                conexionDisponible &&
+                                        !cargandoWeb &&
+                                        !procesando &&
+                                        errorDatos == null
                         ) {
                             Text("+ Nuevo")
                         }
@@ -316,14 +461,17 @@ fun BudgetScreen(
 
                     LinearProgressIndicator(
                         progress = { progreso },
+
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(9.dp),
+
                         color = if (porcentaje > 100) {
                             rojoPresupuesto
                         } else {
                             amarilloPresupuesto
                         },
+
                         trackColor = Color.DarkGray
                     )
 
@@ -343,11 +491,13 @@ fun BudgetScreen(
                         Text(
                             formatoDineroPeriodo(disponible) +
                                     " restante",
+
                             color = if (disponible < 0) {
                                 rojoPresupuesto
                             } else {
                                 verdePresupuesto
                             },
+
                             style = MaterialTheme.typography
                                 .bodySmall
                         )
@@ -392,11 +542,13 @@ fun BudgetScreen(
                                 formatoDineroPeriodo(
                                     disponible
                                 ),
+
                                 color = if (disponible < 0) {
                                     rojoPresupuesto
                                 } else {
                                     verdePresupuesto
                                 },
+
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -414,7 +566,11 @@ fun BudgetScreen(
             )
         }
 
-        if (database == null) {
+        // =====================================
+        // ESTADOS DE CARGA
+        // =====================================
+
+        if (!conexionDisponible) {
 
             item {
                 Text(
@@ -422,17 +578,19 @@ fun BudgetScreen(
                 )
             }
 
-        } else if (correo.isBlank()) {
+        } else if (dataSource != null && cargandoWeb) {
 
             item {
-                Text(
-                    "Debes iniciar sesión para consultar tus presupuestos."
-                )
+
+                CircularProgressIndicator()
+
+                Text("Cargando presupuestos...")
             }
 
         } else if (errorDatos != null) {
 
             item {
+
                 Text(
                     "Error: $errorDatos",
                     color = MaterialTheme.colorScheme.error
@@ -453,11 +611,16 @@ fun BudgetScreen(
                         "No tienes presupuestos para " +
                                 nombresMesesGasti[mesSeleccionado - 1] +
                                 " de $anioSeleccionado.",
+
                         modifier = Modifier.padding(20.dp)
                     )
                 }
             }
         }
+
+        // =====================================
+        // PRESUPUESTOS REGISTRADOS
+        // =====================================
 
         items(
             items = presupuestos,
@@ -469,19 +632,21 @@ fun BudgetScreen(
                     it.first == presupuesto.categoriaId
                 }?.second ?: "Categoría"
 
-            val gastado = gastosPorCategoria[
-                presupuesto.categoriaId
-            ] ?: 0.0
+            val gastado =
+                gastosPorCategoria[presupuesto.categoriaId]
+                    ?: 0.0
 
             val restante = presupuesto.limite - gastado
 
-            val progresoCategoria = (
-                    gastado / presupuesto.limite
-                    ).toFloat().coerceIn(0f, 1f)
+            val progresoCategoria =
+                (gastado / presupuesto.limite)
+                    .toFloat()
+                    .coerceIn(0f, 1f)
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
+
                 colors = CardDefaults.cardColors(
                     containerColor = fondoPresupuesto
                 )
@@ -489,7 +654,9 @@ fun BudgetScreen(
 
                 Column(
                     modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
                 ) {
 
                     Row {
@@ -509,8 +676,10 @@ fun BudgetScreen(
                                             presupuesto.mes - 1
                                         ] +
                                         " ${presupuesto.anio}",
+
                                 style = MaterialTheme.typography
                                     .bodySmall,
+
                                 color = Color.LightGray
                             )
                         }
@@ -527,6 +696,7 @@ fun BudgetScreen(
                     LinearProgressIndicator(
                         progress = { progresoCategoria },
                         modifier = Modifier.fillMaxWidth(),
+
                         color = if (restante < 0) {
                             rojoPresupuesto
                         } else {
@@ -539,6 +709,7 @@ fun BudgetScreen(
                         Text(
                             "Gastado: " +
                                     formatoDineroPeriodo(gastado),
+
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography
                                 .bodySmall
@@ -547,11 +718,13 @@ fun BudgetScreen(
                         Text(
                             formatoDineroPeriodo(restante) +
                                     " disponibles",
+
                             color = if (restante < 0) {
                                 rojoPresupuesto
                             } else {
                                 verdePresupuesto
                             },
+
                             style = MaterialTheme.typography
                                 .bodySmall
                         )
@@ -567,6 +740,7 @@ fun BudgetScreen(
                             } else {
                                 "Atención: estás cerca del límite"
                             },
+
                             color = if (restante < 0) {
                                 rojoPresupuesto
                             } else {
@@ -581,6 +755,8 @@ fun BudgetScreen(
                     ) {
 
                         OutlinedButton(
+                            enabled = !procesando,
+
                             onClick = {
                                 presupuestoEditar = presupuesto
                                 mensaje = ""
@@ -591,10 +767,13 @@ fun BudgetScreen(
                         }
 
                         OutlinedButton(
+                            enabled = !procesando,
+
                             onClick = {
                                 presupuestoEliminar = presupuesto
                             }
                         ) {
+
                             Text(
                                 "Eliminar",
                                 color = rojoPresupuesto
@@ -611,11 +790,11 @@ fun BudgetScreen(
 
             Text(
                 text = "Suma total de presupuestos: " +
-                        formatoDineroPeriodo(
-                            totalPresupuestado
-                        ),
+                        formatoDineroPeriodo(totalPresupuestado),
+
                 color = verdePresupuesto,
                 fontWeight = FontWeight.Bold,
+
                 modifier = Modifier.padding(top = 12.dp)
             )
         }
@@ -632,15 +811,20 @@ fun BudgetScreen(
         }
     }
 
-    // VENTANA PARA ELEGIR MES Y AÑO
+    // =========================================
+    // ELEGIR MES Y AÑO
+    // =========================================
+
     if (mostrarSelectorPeriodo) {
 
         SelectorPeriodoGasti(
             mesActual = mesSeleccionado,
             anioActual = anioSeleccionado,
+
             onCancelar = {
                 mostrarSelectorPeriodo = false
             },
+
             onSeleccionar = { nuevoMes, nuevoAnio ->
 
                 mesSeleccionado = nuevoMes
@@ -652,100 +836,217 @@ fun BudgetScreen(
         )
     }
 
+    // =========================================
     // CREAR O EDITAR PRESUPUESTO
+    // =========================================
+
     if (
         mostrarFormulario &&
-        repositorio != null
+        (dataSource != null || repositorio != null)
     ) {
 
         FormularioPeriodoGasti(
             categorias = categorias,
             presupuesto = presupuestoEditar,
+
+            procesando = procesando,
+
             onCancelar = {
-                mostrarFormulario = false
+                if (!procesando) {
+                    mostrarFormulario = false
+                }
             },
+
             onGuardar = { categoriaId, limite ->
 
-                runCatching {
+                if (!procesando) {
 
-                    val actual = presupuestoEditar
+                    procesando = true
+                    mensaje = ""
 
-                    if (actual == null) {
+                    scope.launch {
 
-                        repositorio.crearPresupuesto(
-                            Presupuesto(
-                                id = "p-${Random.nextLong()}-" +
-                                        Random.nextLong(),
-                                usuarioEmail = correo,
-                                categoriaId = categoriaId,
-                                limite = limite,
-                                anio = anioSeleccionado,
-                                mes = mesSeleccionado
-                            )
-                        )
+                        try {
 
-                    } else {
+                            val actual = presupuestoEditar
 
-                        repositorio.actualizarPresupuesto(
-                            id = actual.id,
-                            usuarioEmail = correo,
-                            nuevoLimite = limite
-                        )
+                            val resultado: Result<Unit> =
+                                if (dataSource != null) {
+
+                                    if (actual == null) {
+
+                                        dataSource.crearPresupuesto(
+                                            Presupuesto(
+                                                id = "p-${Random.nextLong()}-" +
+                                                        Random.nextLong(),
+
+                                                usuarioEmail = correo,
+                                                categoriaId = categoriaId,
+                                                limite = limite,
+
+                                                anio = anioSeleccionado,
+                                                mes = mesSeleccionado
+                                            )
+                                        )
+
+                                    } else {
+
+                                        dataSource.actualizarPresupuesto(
+                                            id = actual.id,
+                                            usuarioEmail = correo,
+                                            nuevoLimite = limite
+                                        )
+                                    }
+
+                                } else {
+
+                                    runCatching {
+
+                                        if (actual == null) {
+
+                                            repositorio!!.crearPresupuesto(
+                                                Presupuesto(
+                                                    id = "p-${Random.nextLong()}-" +
+                                                            Random.nextLong(),
+
+                                                    usuarioEmail = correo,
+                                                    categoriaId = categoriaId,
+                                                    limite = limite,
+
+                                                    anio = anioSeleccionado,
+                                                    mes = mesSeleccionado
+                                                )
+                                            )
+
+                                        } else {
+
+                                            repositorio!!.actualizarPresupuesto(
+                                                id = actual.id,
+                                                usuarioEmail = correo,
+                                                nuevoLimite = limite
+                                            )
+                                        }
+
+                                        Unit
+                                    }
+                                }
+
+                            resultado.getOrThrow()
+
+                            revision++
+                            mostrarFormulario = false
+                            presupuestoEditar = null
+
+                            mensaje =
+                                "Presupuesto guardado correctamente"
+
+                        } catch (error: CancellationException) {
+
+                            throw error
+
+                        } catch (error: Exception) {
+
+                            mensaje = error.message
+                                ?: "Error al guardar presupuesto"
+
+                        } finally {
+
+                            procesando = false
+                        }
                     }
-
-                }.onSuccess {
-
-                    revision++
-                    mostrarFormulario = false
-                    mensaje = "Presupuesto guardado correctamente"
-
-                }.onFailure {
-
-                    mensaje = it.message ?: "Error al guardar"
                 }
             }
         )
     }
 
+    // =========================================
     // ELIMINAR PRESUPUESTO
+    // =========================================
+
     presupuestoEliminar?.let { presupuesto ->
 
         AlertDialog(
             onDismissRequest = {
-                presupuestoEliminar = null
+                if (!procesando) {
+                    presupuestoEliminar = null
+                }
             },
+
             title = {
                 Text("Eliminar presupuesto")
             },
+
             text = {
                 Text(
                     "¿Confirmas que deseas eliminar este presupuesto?"
                 )
             },
+
             confirmButton = {
 
                 TextButton(
+                    enabled = !procesando,
+
                     onClick = {
 
-                        runCatching {
+                        if (!procesando) {
 
-                            repositorio?.eliminarPresupuesto(
-                                presupuesto.id,
-                                correo
-                            )
+                            procesando = true
 
-                        }.onSuccess {
+                            scope.launch {
 
-                            revision++
-                            mensaje = "Presupuesto eliminado"
+                                try {
 
-                        }.onFailure {
+                                    val resultado: Result<Unit> =
+                                        if (dataSource != null) {
 
-                            mensaje = it.message
-                                ?: "Error al eliminar"
+                                            dataSource.eliminarPresupuesto(
+                                                presupuesto.id,
+                                                correo
+                                            )
+
+                                        } else {
+
+                                            runCatching {
+
+                                                repositorio!!
+                                                    .eliminarPresupuesto(
+                                                        presupuesto.id,
+                                                        correo
+                                                    )
+
+                                                Unit
+                                            }
+                                        }
+
+                                    resultado.getOrThrow()
+
+                                    revision++
+
+                                    mensaje =
+                                        "Presupuesto eliminado"
+
+                                    presupuestoEliminar = null
+
+                                } catch (
+                                    error: CancellationException
+                                ) {
+
+                                    throw error
+
+                                } catch (error: Exception) {
+
+                                    mensaje = error.message
+                                        ?: "Error al eliminar"
+
+                                    presupuestoEliminar = null
+
+                                } finally {
+
+                                    procesando = false
+                                }
+                            }
                         }
-
-                        presupuestoEliminar = null
                     }
                 ) {
 
@@ -755,13 +1056,17 @@ fun BudgetScreen(
                     )
                 }
             },
+
             dismissButton = {
 
                 TextButton(
+                    enabled = !procesando,
+
                     onClick = {
                         presupuestoEliminar = null
                     }
                 ) {
+
                     Text("Cancelar")
                 }
             }
@@ -770,10 +1075,7 @@ fun BudgetScreen(
 }
 
 /**
- * Selector de mes y año.
- *
- * El usuario selecciona el mes
- * pulsando un botón, sin escribir fechas.
+ * Selector visual de mes y año.
  */
 @Composable
 private fun SelectorPeriodoGasti(
@@ -793,9 +1095,11 @@ private fun SelectorPeriodoGasti(
 
     AlertDialog(
         onDismissRequest = onCancelar,
+
         title = {
             Text("Seleccionar período")
         },
+
         text = {
 
             Column(
@@ -803,10 +1107,12 @@ private fun SelectorPeriodoGasti(
                     Arrangement.spacedBy(16.dp)
             ) {
 
-                // CONTROLES DEL AÑO
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+
+                    verticalAlignment =
+                        Alignment.CenterVertically,
+
                     horizontalArrangement =
                         Arrangement.SpaceBetween
                 ) {
@@ -835,20 +1141,22 @@ private fun SelectorPeriodoGasti(
                     }
                 }
 
-                // CUADRÍCULA DE LOS DOCE MESES
                 for (fila in 0..3) {
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+
                         horizontalArrangement =
                             Arrangement.spacedBy(6.dp)
                     ) {
 
                         for (columna in 0..2) {
 
-                            val numeroMes = fila * 3 + columna + 1
+                            val numeroMes =
+                                fila * 3 + columna + 1
 
-                            val seleccionado = mes == numeroMes
+                            val seleccionado =
+                                mes == numeroMes
 
                             if (seleccionado) {
 
@@ -856,7 +1164,9 @@ private fun SelectorPeriodoGasti(
                                     onClick = {
                                         mes = numeroMes
                                     },
+
                                     modifier = Modifier.weight(1f),
+
                                     contentPadding = PaddingValues(
                                         horizontal = 2.dp,
                                         vertical = 4.dp
@@ -876,7 +1186,9 @@ private fun SelectorPeriodoGasti(
                                     onClick = {
                                         mes = numeroMes
                                     },
+
                                     modifier = Modifier.weight(1f),
+
                                     contentPadding = PaddingValues(
                                         horizontal = 2.dp,
                                         vertical = 4.dp
@@ -895,6 +1207,7 @@ private fun SelectorPeriodoGasti(
                 }
             }
         },
+
         confirmButton = {
 
             Button(
@@ -905,6 +1218,7 @@ private fun SelectorPeriodoGasti(
                 Text("Seleccionar")
             }
         },
+
         dismissButton = {
 
             TextButton(
@@ -917,13 +1231,15 @@ private fun SelectorPeriodoGasti(
 }
 
 /**
- * Formulario para registrar o editar
- * el límite de un presupuesto.
+ * Formulario de creación y edición.
+ *
+ * Funciona con Android, Desktop y Web.
  */
 @Composable
 private fun FormularioPeriodoGasti(
     categorias: List<Pair<String, String>>,
     presupuesto: Presupuesto?,
+    procesando: Boolean,
     onCancelar: () -> Unit,
     onGuardar: (String, Double) -> Unit
 ) {
@@ -931,8 +1247,7 @@ private fun FormularioPeriodoGasti(
     var categoriaId by remember(presupuesto) {
         mutableStateOf(
             presupuesto?.categoriaId
-                ?: categorias.firstOrNull()
-                    ?.first.orEmpty()
+                ?: categorias.firstOrNull()?.first.orEmpty()
         )
     }
 
@@ -952,7 +1267,12 @@ private fun FormularioPeriodoGasti(
     val limite = limiteTexto.toDoubleOrNull()
 
     AlertDialog(
-        onDismissRequest = onCancelar,
+        onDismissRequest = {
+            if (!procesando) {
+                onCancelar()
+            }
+        },
+
         title = {
 
             Text(
@@ -963,6 +1283,7 @@ private fun FormularioPeriodoGasti(
                 }
             )
         },
+
         text = {
 
             Column(
@@ -975,8 +1296,11 @@ private fun FormularioPeriodoGasti(
                 Box {
 
                     OutlinedButton(
-                        enabled = presupuesto == null &&
-                                categorias.isNotEmpty(),
+                        enabled =
+                            !procesando &&
+                                    presupuesto == null &&
+                                    categorias.isNotEmpty(),
+
                         onClick = {
                             menuAbierto = true
                         }
@@ -1002,6 +1326,7 @@ private fun FormularioPeriodoGasti(
                                 text = {
                                     Text(categoria.second)
                                 },
+
                                 onClick = {
                                     categoriaId = categoria.first
                                     menuAbierto = false
@@ -1013,12 +1338,16 @@ private fun FormularioPeriodoGasti(
 
                 OutlinedTextField(
                     value = limiteTexto,
+
                     onValueChange = {
                         limiteTexto = it
                     },
+
                     label = {
                         Text("Límite de gasto")
                     },
+
+                    enabled = !procesando,
                     singleLine = true
                 )
 
@@ -1029,18 +1358,30 @@ private fun FormularioPeriodoGasti(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+
+                if (procesando) {
+
+                    CircularProgressIndicator()
+
+                    Text("Guardando presupuesto...")
+                }
             }
         },
+
         confirmButton = {
 
             Button(
-                enabled = categoriaId.isNotBlank() &&
-                        limite != null &&
-                        limite.isFinite() &&
-                        limite > 0.0,
+                enabled =
+                    !procesando &&
+                            categoriaId.isNotBlank() &&
+                            limite != null &&
+                            limite.isFinite() &&
+                            limite > 0.0,
+
                 onClick = {
 
                     if (limite != null) {
+
                         onGuardar(
                             categoriaId,
                             limite
@@ -1052,11 +1393,14 @@ private fun FormularioPeriodoGasti(
                 Text("Guardar")
             }
         },
+
         dismissButton = {
 
             TextButton(
+                enabled = !procesando,
                 onClick = onCancelar
             ) {
+
                 Text("Cancelar")
             }
         }

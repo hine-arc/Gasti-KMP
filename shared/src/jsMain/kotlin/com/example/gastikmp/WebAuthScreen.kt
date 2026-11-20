@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -24,14 +27,25 @@ import androidx.compose.ui.unit.dp
 import app.cash.sqldelight.db.SqlDriver
 
 import com.example.gastikmp.data.WebGastoDataSource
+import com.example.gastikmp.data.WebHomeDataSource
+import com.example.gastikmp.data.WebPresupuestoDataSource
 import com.example.gastikmp.data.WebIndexedDbStorage
 import com.example.gastikmp.data.WebPasswordSecurity
 import com.example.gastikmp.data.WebSqlDelightDriverFactory
+
+import com.example.gastikmp.navigation.LocalGastiNavigate
 import com.example.gastikmp.navigation.MainScaffold
 import com.example.gastikmp.presentation.ExpensesScreen
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 
+/**
+ * Conexion financiera de una sesion Web.
+ *
+ * Inicio, Gastos y Presupuestos comparten
+ * el mismo controlador SQLite.
+ */
 private class SesionFinancieraWeb {
 
     var driver by mutableStateOf<SqlDriver?>(null)
@@ -41,10 +55,13 @@ private class SesionFinancieraWeb {
     var preparando by mutableStateOf(true)
 
     fun cerrar() {
+
         val anterior = driver
+
         driver = null
 
         if (anterior != null) {
+
             runCatching {
                 anterior.close()
             }
@@ -53,9 +70,22 @@ private class SesionFinancieraWeb {
 }
 
 /**
- * Gasti Web:
- * autenticacion original y conexion financiera
- * compartida durante la sesion.
+ * GASTI KMP - WEB JAVASCRIPT
+ *
+ * Reutiliza las pantallas compartidas:
+ *
+ * - LoginScreen
+ * - RegisterScreen
+ * - MainScaffold
+ * - HomeScreen
+ * - ExpensesScreen
+ * - BudgetScreen
+ *
+ * La autenticacion Web permanece
+ * en IndexedDB.
+ *
+ * Los datos financieros se almacenan
+ * mediante SQLite Web.
  */
 @Composable
 fun WebAuthScreen() {
@@ -80,9 +110,17 @@ fun WebAuthScreen() {
         mutableStateOf<String?>(null)
     }
 
-    if (usuarioActual != null && correoActual != null) {
+    if (
+        usuarioActual != null &&
+        correoActual != null
+    ) {
 
         val emailSesion = correoActual!!
+        val nombreSesion = usuarioActual ?: ""
+
+        // =====================================
+        // CONTROLADOR SQLITE DE LA SESION
+        // =====================================
 
         val sesion = remember(emailSesion) {
             SesionFinancieraWeb()
@@ -113,6 +151,12 @@ fun WebAuthScreen() {
                     )
                 }
 
+            } catch (
+                error: CancellationException
+            ) {
+
+                throw error
+
             } catch (error: Exception) {
 
                 sesion.mensajeError =
@@ -125,29 +169,55 @@ fun WebAuthScreen() {
                 )
 
             } finally {
+
                 sesion.preparando = false
             }
         }
 
         DisposableEffect(sesion) {
+
             onDispose {
+
                 sesion.cerrar()
+
                 println(
                     "GASTI WEB: conexion financiera cerrada"
                 )
             }
         }
 
+        // =====================================
+        // REPOSITORIO COMPARTIDO DE GASTOS
+        // =====================================
+
         val fuenteGastos = remember(sesion.driver) {
+
             sesion.driver?.let { driver ->
                 WebGastoDataSource(driver)
             }
         }
 
+        // =====================================
+        // REPOSITORIO DE PRESUPUESTOS
+        // =====================================
+
+        val fuentePresupuestos =
+            remember(sesion.driver) {
+
+                sesion.driver?.let { driver ->
+                    WebPresupuestoDataSource(driver)
+                }
+            }
+
+        // =====================================
+        // NAVEGACION PRINCIPAL DE GASTI
+        // =====================================
+
         MainScaffold(
             database = null,
 
             onLogout = {
+
                 usuarioActual = null
                 correoActual = null
                 mostrarRegistro = false
@@ -155,7 +225,27 @@ fun WebAuthScreen() {
 
             webContent = { screen ->
 
+                val driverActual = sesion.driver
+
                 when {
+
+                    // =================================
+                    // INICIO COMPARTIDO
+                    // =================================
+
+                    screen == Screen.Home &&
+                            driverActual != null -> {
+
+                        InicioFinancieroWeb(
+                            driver = driverActual,
+                            email = emailSesion,
+                            nombre = nombreSesion
+                        )
+                    }
+
+                    // =================================
+                    // GASTOS COMPARTIDOS
+                    // =================================
 
                     screen == Screen.Expenses &&
                             fuenteGastos != null -> {
@@ -167,34 +257,48 @@ fun WebAuthScreen() {
                         )
                     }
 
-                    screen == Screen.Expenses &&
-                            sesion.preparando -> {
+                    // =================================
+                    // PRESUPUESTOS COMPARTIDOS
+                    // =================================
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
+                    screen == Screen.Budget &&
+                            fuentePresupuestos != null -> {
 
-                            CircularProgressIndicator()
-
-                            Spacer(
-                                modifier = Modifier.height(16.dp)
-                            )
-
-                            Text("Preparando Gastos e ingresos...")
-                        }
+                        BudgetScreen(
+                            database = null,
+                            dataSource = fuentePresupuestos,
+                            usuarioEmail = emailSesion
+                        )
                     }
+
+                    // =================================
+                    // PREPARACION DE SQLITE
+                    // =================================
+
+                    (
+                            screen == Screen.Home ||
+                                    screen == Screen.Expenses ||
+                                    screen == Screen.Budget
+                            ) && sesion.preparando -> {
+
+                        PantallaCargandoWeb(
+                            mensaje =
+                                "Preparando los datos de Gasti..."
+                        )
+                    }
+
+                    // =================================
+                    // ESTADISTICAS PENDIENTES
+                    // =================================
 
                     else -> {
 
                         ContenidoFinancieroWebPendiente(
                             screen = screen,
-                            nombre = usuarioActual ?: "",
+                            nombre = nombreSesion,
                             preparando = sesion.preparando,
-                            conexionPreparada = sesion.driver != null,
+                            conexionPreparada =
+                                driverActual != null,
                             mensajeError = sesion.mensajeError
                         )
                     }
@@ -203,6 +307,10 @@ fun WebAuthScreen() {
         )
 
     } else if (mostrarRegistro) {
+
+        // =====================================
+        // REGISTRO WEB ORIGINAL
+        // =====================================
 
         RegisterScreen(
             onNavigateBack = {
@@ -226,12 +334,16 @@ fun WebAuthScreen() {
                     val claveBase =
                         "usuario:$correoNormalizado"
 
-                    require(nombreNormalizado.isNotBlank()) {
+                    require(
+                        nombreNormalizado.isNotBlank()
+                    ) {
                         "El nombre es obligatorio"
                     }
 
                     val nombreExistente =
-                        almacenamiento.leer("$claveBase:nombre")
+                        almacenamiento.leer(
+                            "$claveBase:nombre"
+                        )
 
                     require(nombreExistente == null) {
                         "El correo ya esta registrado"
@@ -239,6 +351,9 @@ fun WebAuthScreen() {
 
                     val protegida =
                         seguridad.proteger(password)
+
+                    // Guardamos hash y sal;
+                    // nunca la contrasena original.
 
                     almacenamiento.guardar(
                         "$claveBase:hash",
@@ -249,6 +364,8 @@ fun WebAuthScreen() {
                         "$claveBase:salt",
                         protegida.passwordSalt
                     )
+
+                    // Guardamos el nombre al final.
 
                     almacenamiento.guardar(
                         "$claveBase:nombre",
@@ -264,6 +381,10 @@ fun WebAuthScreen() {
         )
 
     } else {
+
+        // =====================================
+        // LOGIN WEB ORIGINAL
+        // =====================================
 
         LoginScreen(
             onNavigateToRegister = {
@@ -285,20 +406,29 @@ fun WebAuthScreen() {
                         "usuario:$correoNormalizado"
 
                     val nombreGuardado =
-                        almacenamiento.leer("$claveBase:nombre")
+                        almacenamiento.leer(
+                            "$claveBase:nombre"
+                        )
 
                     val hashGuardado =
-                        almacenamiento.leer("$claveBase:hash")
+                        almacenamiento.leer(
+                            "$claveBase:hash"
+                        )
 
                     val saltGuardada =
-                        almacenamiento.leer("$claveBase:salt")
+                        almacenamiento.leer(
+                            "$claveBase:salt"
+                        )
 
                     if (
                         nombreGuardado == null ||
                         hashGuardado == null ||
                         saltGuardada == null
                     ) {
-                        error("Correo o contrasena incorrectos")
+
+                        error(
+                            "Correo o contrasena incorrectos"
+                        )
                     }
 
                     val claveCorrecta =
@@ -322,6 +452,222 @@ fun WebAuthScreen() {
     }
 }
 
+/**
+ * Consulta el resumen financiero Web.
+ *
+ * Reutiliza HomeScreen original.
+ *
+ * Conecta las acciones rapidas
+ * de Inicio con MainScaffold.
+ */
+@Composable
+private fun InicioFinancieroWeb(
+    driver: SqlDriver,
+    email: String,
+    nombre: String
+) {
+
+    val navegar = LocalGastiNavigate.current
+
+    var datos by remember(driver, email) {
+        mutableStateOf<DatosHome?>(null)
+    }
+
+    var cargando by remember(driver, email) {
+        mutableStateOf(true)
+    }
+
+    var mensajeError by remember(driver, email) {
+        mutableStateOf<String?>(null)
+    }
+
+    LaunchedEffect(driver, email) {
+
+        cargando = true
+        mensajeError = null
+
+        try {
+
+            println(
+                "GASTI HOME WEB: consultando datos financieros..."
+            )
+
+            val repositorio =
+                WebHomeDataSource(driver)
+
+            val resultado =
+                repositorio.cargarDatos(email)
+                    .getOrThrow()
+
+            if (isActive) {
+
+                datos = DatosHome(
+
+                    movimientos =
+                        resultado.movimientos.map {
+
+                            MovimientoHome(
+                                id = it.id,
+                                descripcion = it.descripcion,
+                                monto = it.monto,
+                                fecha = it.fecha,
+                                categoriaId = it.categoriaId,
+                                tipo = it.tipo
+                            )
+                        },
+
+                    presupuestos =
+                        resultado.presupuestos.map {
+
+                            PresupuestoHome(
+                                categoriaId = it.categoriaId,
+                                limite = it.limite,
+                                anio = it.anio,
+                                mes = it.mes
+                            )
+                        },
+
+                    categorias = resultado.categorias
+                )
+
+                println(
+                    "GASTI HOME WEB: datos financieros cargados"
+                )
+            }
+
+        } catch (
+            error: CancellationException
+        ) {
+
+            throw error
+
+        } catch (error: Exception) {
+
+            mensajeError =
+                error.message
+                    ?: "No se pudo consultar el resumen."
+
+            println(
+                "GASTI HOME WEB: ERROR - " +
+                        mensajeError
+            )
+
+        } finally {
+
+            cargando = false
+        }
+    }
+
+    when {
+
+        cargando -> {
+
+            PantallaCargandoWeb(
+                mensaje =
+                    "Cargando tu resumen financiero..."
+            )
+        }
+
+        mensajeError != null -> {
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+
+                verticalArrangement =
+                    Arrangement.Center,
+
+                horizontalAlignment =
+                    Alignment.CenterHorizontally
+            ) {
+
+                Text(
+                    text = "No se pudo cargar Inicio",
+                    style =
+                        MaterialTheme.typography.titleLarge,
+                    color =
+                        MaterialTheme.colorScheme.error
+                )
+
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
+
+                Text(
+                    text = mensajeError
+                        ?: "Error desconocido.",
+
+                    color = MaterialTheme.colorScheme
+                        .onSurfaceVariant
+                )
+            }
+        }
+
+        datos != null -> {
+
+            HomeScreen(
+                database = null,
+                datosWeb = datos,
+                nombreWeb = nombre,
+
+                onIrAGastos = {
+                    navegar(Screen.Expenses)
+                },
+
+                onIrAPresupuestos = {
+                    navegar(Screen.Budget)
+                }
+            )
+        }
+
+        else -> {
+
+            PantallaCargandoWeb(
+                mensaje =
+                    "Esperando datos financieros..."
+            )
+        }
+    }
+}
+
+/**
+ * Pantalla temporal de carga.
+ */
+@Composable
+private fun PantallaCargandoWeb(
+    mensaje: String
+) {
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+
+        verticalArrangement = Arrangement.Center,
+
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+
+        CircularProgressIndicator()
+
+        Spacer(
+            modifier = Modifier.height(16.dp)
+        )
+
+        Text(
+            text = mensaje,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+/**
+ * Pantallas pendientes.
+ *
+ * Actualmente queda Estadisticas
+ * por conectar con SQLite Web.
+ */
 @Composable
 private fun ContenidoFinancieroWebPendiente(
     screen: Screen,
@@ -332,6 +678,7 @@ private fun ContenidoFinancieroWebPendiente(
 ) {
 
     val titulo = when (screen) {
+
         Screen.Home -> "Inicio"
         Screen.Budget -> "Presupuesto"
         Screen.Stats -> "Estadísticas"
@@ -343,14 +690,18 @@ private fun ContenidoFinancieroWebPendiente(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp),
+
         verticalArrangement = Arrangement.Center,
+
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
         Text(
             text = titulo,
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground
+            style =
+                MaterialTheme.typography.headlineMedium,
+            color =
+                MaterialTheme.colorScheme.onBackground
         )
 
         Spacer(
@@ -361,7 +712,10 @@ private fun ContenidoFinancieroWebPendiente(
 
             Text(
                 text = "¡Bienvenido, $nombre!",
-                style = MaterialTheme.typography.titleLarge
+                style =
+                    MaterialTheme.typography.titleLarge,
+                color =
+                    MaterialTheme.colorScheme.onBackground
             )
 
             Spacer(
@@ -370,6 +724,7 @@ private fun ContenidoFinancieroWebPendiente(
         }
 
         val mensaje = when {
+
             mensajeError != null ->
                 "Error de conexión SQLite: $mensajeError"
 
@@ -377,7 +732,7 @@ private fun ContenidoFinancieroWebPendiente(
                 "Preparando la conexión SQLite de Gasti Web..."
 
             conexionPreparada ->
-                "Conexión SQLite financiera preparada."
+                "Esta pantalla financiera estará disponible próximamente."
 
             else ->
                 "La conexión financiera no está disponible."
@@ -385,7 +740,9 @@ private fun ContenidoFinancieroWebPendiente(
 
         Text(
             text = mensaje,
-            style = MaterialTheme.typography.bodyMedium,
+            style =
+                MaterialTheme.typography.bodyMedium,
+
             color = if (mensajeError != null) {
                 MaterialTheme.colorScheme.error
             } else {
@@ -398,9 +755,13 @@ private fun ContenidoFinancieroWebPendiente(
         )
 
         Text(
-            text = "Tus cuentas registradas permanecen en IndexedDB.",
+            text =
+                "Tus cuentas registradas permanecen en IndexedDB.",
+
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            color = MaterialTheme.colorScheme
+                .onSurfaceVariant
         )
     }
 }

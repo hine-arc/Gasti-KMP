@@ -30,7 +30,7 @@ private val mesesHome = listOf(
     "Diciembre"
 )
 
-private data class MovimientoHome(
+data class MovimientoHome(
     val id: String,
     val descripcion: String,
     val monto: Double,
@@ -39,37 +39,40 @@ private data class MovimientoHome(
     val tipo: String
 )
 
-private data class PresupuestoHome(
+data class PresupuestoHome(
     val categoriaId: String,
     val limite: Double,
     val anio: Int,
     val mes: Int
 )
 
-private data class DatosHome(
+data class DatosHome(
     val movimientos: List<MovimientoHome>,
     val presupuestos: List<PresupuestoHome>,
     val categorias: Map<String, String>
 )
 
 /**
- * GASTI KMP - FASE 3
+ * GASTI KMP
  *
- * Home conectado con SQLDelight.
+ * Pantalla Inicio compartida.
  *
- * Muestra:
- * - Presupuesto disponible
- * - Presupuesto total
- * - Gastos del mes
- * - Ingresos y balance
- * - Acciones rápidas
- * - Gastos recientes
+ * Android y Desktop:
+ * consultan GastiDatabase directamente.
+ *
+ * Web:
+ * puede recibir DatosHome desde
+ * consultas SQLDelight asincronas.
+ *
+ * Se conserva el diseño original.
  */
 @Composable
 fun HomeScreen(
     database: GastiDatabase? = null,
     onIrAGastos: () -> Unit = {},
-    onIrAPresupuestos: () -> Unit = {}
+    onIrAPresupuestos: () -> Unit = {},
+    datosWeb: DatosHome? = null,
+    nombreWeb: String? = null
 ) {
 
     val usuario = AuthRepository.currentUser
@@ -79,12 +82,13 @@ fun HomeScreen(
         .trim()
         .lowercase()
 
-    val nombreUsuario = usuario?.name
+    val nombreUsuario = nombreWeb
         ?.takeIf { it.isNotBlank() }
+        ?: usuario?.name
+            ?.takeIf { it.isNotBlank() }
         ?: "Usuario"
 
-    // Período inicial del proyecto.
-    // Se puede cambiar mediante las flechas.
+    // Periodo inicial del proyecto.
     var mes by remember {
         mutableIntStateOf(11)
     }
@@ -97,14 +101,25 @@ fun HomeScreen(
         mutableIntStateOf(0)
     }
 
-    // Consultar información real.
+    // Android/Desktop consultan SQLDelight.
+    // Web utiliza los datos proporcionados.
     val resultado = remember(
-        database, correo, revision
+        database,
+        correo,
+        revision,
+        datosWeb
     ) {
 
         runCatching {
 
-            if (database == null || correo.isBlank()) {
+            if (datosWeb != null) {
+
+                datosWeb
+
+            } else if (
+                database == null ||
+                correo.isBlank()
+            ) {
 
                 DatosHome(
                     movimientos = emptyList(),
@@ -240,7 +255,7 @@ fun HomeScreen(
         0f
     }
 
-    // Cinco gastos más recientes del usuario.
+    // Cinco gastos mas recientes del usuario.
     val recientes = datos
         ?.movimientos
         .orEmpty()
@@ -299,7 +314,7 @@ fun HomeScreen(
             }
         }
 
-        // CAMBIAR MES Y AÑO
+        // CAMBIAR MES Y ANO
         item {
 
             Row(
@@ -346,7 +361,7 @@ fun HomeScreen(
             }
         }
 
-        if (database == null) {
+        if (database == null && datosWeb == null) {
 
             item {
                 Text(
@@ -355,7 +370,7 @@ fun HomeScreen(
                 )
             }
 
-        } else if (correo.isBlank()) {
+        } else if (correo.isBlank() && datosWeb == null) {
 
             item {
                 Text(
@@ -576,7 +591,7 @@ fun HomeScreen(
                 }
             }
 
-            // ACCIONES RÁPIDAS
+            // ACCIONES RAPIDAS
             item {
 
                 Text(
@@ -744,7 +759,7 @@ fun HomeScreen(
 }
 
 /**
- * Componente pequeño para importes.
+ * Componente pequeno para importes.
  */
 @Composable
 private fun HomeDato(

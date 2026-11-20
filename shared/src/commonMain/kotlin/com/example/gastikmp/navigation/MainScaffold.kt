@@ -13,6 +13,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,20 +34,31 @@ import com.example.gastikmp.database.GastiDatabase
 import com.example.gastikmp.presentation.ExpensesScreen as ExpensesDatabaseScreen
 
 /**
+ * Navegacion compartida de Gasti.
+ *
+ * Permite que las pantallas internas
+ * soliciten un cambio de pestana.
+ *
+ * Funciona en Android, Desktop y Web.
+ */
+val LocalGastiNavigate = compositionLocalOf<(Screen) -> Unit> {
+    {}
+}
+
+/**
  * GASTI KMP
  *
  * Navegacion principal compartida.
  *
  * Android y Desktop:
- * reciben una base de datos SQLDelight.
+ * utilizan GastiDatabase.
  *
  * Web:
- * puede proporcionar contenido financiero
- * mediante webContent, sin duplicar
- * la barra de navegacion.
+ * utiliza webContent para mostrar
+ * las pantallas financieras compartidas
+ * con sus repositorios asincronos.
  *
- * Las pantallas originales de Android
- * y Desktop permanecen sin cambios.
+ * Se conservan Perfil y Creditos.
  */
 @Composable
 fun MainScaffold(
@@ -62,253 +75,210 @@ fun MainScaffold(
         mutableStateOf<Screen?>(null)
     }
 
-    val activeScreen = currentSubScreen ?: selectedTab
+    val activeScreen =
+        currentSubScreen ?: selectedTab
 
-    Scaffold(
-        bottomBar = {
+    /**
+     * Cambiar de pestana desde cualquier
+     * pantalla dentro de MainScaffold.
+     */
+    val navegar: (Screen) -> Unit = { destino ->
 
-            if (currentSubScreen == null) {
-
-                NavigationBar(
-                    containerColor =
-                        MaterialTheme.colorScheme.surface,
-                    contentColor =
-                        MaterialTheme.colorScheme.primary
-                ) {
-
-                    val screens = listOf(
-                        Screen.Home to "Inicio",
-                        Screen.Budget to "Presupuesto",
-                        Screen.Stats to "Estadísticas",
-                        Screen.Expenses to "Gastos",
-                        Screen.Profile to "Perfil"
-                    )
-
-                    screens.forEach { (screen, label) ->
-
-                        NavigationBarItem(
-                            selected = selectedTab == screen,
-
-                            onClick = {
-                                selectedTab = screen
-                            },
-
-                            icon = {
-
-                                Text(
-                                    when (screen) {
-                                        Screen.Home -> "⌂"
-                                        Screen.Budget -> "◈"
-                                        Screen.Stats -> "▥"
-                                        Screen.Expenses -> "$"
-                                        else -> "●"
-                                    }
-                                )
-                            },
-
-                            label = {
-                                Text(label)
-                            },
-
-                            colors =
-                                NavigationBarItemDefaults.colors(
-
-                                    selectedIconColor =
-                                        MaterialTheme.colorScheme.primary,
-
-                                    unselectedIconColor =
-                                        MaterialTheme.colorScheme
-                                            .onSurfaceVariant,
-
-                                    selectedTextColor =
-                                        MaterialTheme.colorScheme.primary,
-
-                                    unselectedTextColor =
-                                        MaterialTheme.colorScheme
-                                            .onSurfaceVariant,
-
-                                    indicatorColor =
-                                        MaterialTheme.colorScheme
-                                            .surfaceVariant
-                                )
-                        )
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-
-            when (activeScreen) {
-
-                // INICIO
-                Screen.Home -> {
-
-                    if (database != null) {
-
-                        HomeScreen(
-                            database = database,
-
-                            onIrAGastos = {
-                                selectedTab = Screen.Expenses
-                            },
-
-                            onIrAPresupuestos = {
-                                selectedTab = Screen.Budget
-                            }
-                        )
-
-                    } else {
-
-                        ContenidoWeb(
-                            screen = Screen.Home,
-                            webContent = webContent
-                        )
-                    }
-                }
-
-                // PRESUPUESTOS
-                Screen.Budget -> {
-
-                    if (database != null) {
-
-                        BudgetScreen(
-                            database = database
-                        )
-
-                    } else {
-
-                        ContenidoWeb(
-                            screen = Screen.Budget,
-                            webContent = webContent
-                        )
-                    }
-                }
-
-                // ESTADISTICAS
-                Screen.Stats -> {
-
-                    if (database != null) {
-
-                        StatsScreen(
-                            database = database
-                        )
-
-                    } else {
-
-                        ContenidoWeb(
-                            screen = Screen.Stats,
-                            webContent = webContent
-                        )
-                    }
-                }
-
-                // GASTOS E INGRESOS
-                Screen.Expenses -> {
-
-                    if (database != null) {
-
-                        ExpensesDatabaseScreen(
-                            database = database
-                        )
-
-                    } else {
-
-                        ContenidoWeb(
-                            screen = Screen.Expenses,
-                            webContent = webContent
-                        )
-                    }
-                }
-
-                // PERFIL ORIGINAL
-                Screen.Profile -> {
-
-                    ProfileScreen(
-                        onNavigateToCredits = {
-                            currentSubScreen = Screen.Credits
-                        },
-
-                        onLogout = onLogout
-                    )
-                }
-
-                // CREDITOS ORIGINALES
-                Screen.Credits -> {
-
-                    CreditsScreen(
-                        onBack = {
-                            currentSubScreen = null
-                        }
-                    )
-                }
-
-                // PANTALLA POR DEFECTO
-                else -> {
-
-                    if (database != null) {
-
-                        HomeScreen(
-                            database = database,
-
-                            onIrAGastos = {
-                                selectedTab = Screen.Expenses
-                            },
-
-                            onIrAPresupuestos = {
-                                selectedTab = Screen.Budget
-                            }
-                        )
-
-                    } else {
-
-                        ContenidoWeb(
-                            screen = Screen.Home,
-                            webContent = webContent
-                        )
-                    }
-                }
-            }
-        }
+        currentSubScreen = null
+        selectedTab = destino
     }
-}
 
-/**
- * Permite mostrar contenido financiero Web
- * sin modificar la navegacion compartida.
- *
- * La implementacion real de las pantallas
- * financieras Web se conectara despues.
- */
-@Composable
-private fun ContenidoWeb(
-    screen: Screen,
-    webContent: (@Composable (Screen) -> Unit)?
-) {
+    CompositionLocalProvider(
+        LocalGastiNavigate provides navegar
+    ) {
 
-    if (webContent != null) {
+        Scaffold(
 
-        webContent(screen)
+            bottomBar = {
 
-    } else {
+                if (currentSubScreen == null) {
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize(),
-            contentAlignment =
-                androidx.compose.ui.Alignment.Center
-        ) {
+                    NavigationBar(
+                        containerColor =
+                            MaterialTheme.colorScheme.surface,
 
-            Text(
-                text = "Almacenamiento financiero Web pendiente",
-                color =
-                    MaterialTheme.colorScheme.onBackground
-            )
+                        contentColor =
+                            MaterialTheme.colorScheme.primary
+                    ) {
+
+                        val screens = listOf(
+                            Screen.Home to "Inicio",
+                            Screen.Budget to "Presupuesto",
+                            Screen.Stats to "Estadísticas",
+                            Screen.Expenses to "Gastos",
+                            Screen.Profile to "Perfil"
+                        )
+
+                        screens.forEach { (screen, label) ->
+
+                            NavigationBarItem(
+
+                                selected = selectedTab == screen,
+
+                                onClick = {
+                                    navegar(screen)
+                                },
+
+                                icon = {
+
+                                    Text(
+                                        when (screen) {
+                                            Screen.Home -> "⌂"
+                                            Screen.Budget -> "◇"
+                                            Screen.Stats -> "▥"
+                                            Screen.Expenses -> "$"
+                                            else -> "●"
+                                        }
+                                    )
+                                },
+
+                                label = {
+                                    Text(label)
+                                },
+
+                                colors =
+                                    NavigationBarItemDefaults.colors(
+
+                                        selectedIconColor =
+                                            MaterialTheme.colorScheme.primary,
+
+                                        unselectedIconColor =
+                                            MaterialTheme.colorScheme.onSurfaceVariant,
+
+                                        selectedTextColor =
+                                            MaterialTheme.colorScheme.primary,
+
+                                        unselectedTextColor =
+                                            MaterialTheme.colorScheme.onSurfaceVariant,
+
+                                        indicatorColor =
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
+
+        ) { innerPadding ->
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+
+                when (activeScreen) {
+
+                    // =================================
+                    // PERFIL ORIGINAL
+                    // =================================
+
+                    Screen.Profile -> {
+
+                        ProfileScreen(
+
+                            onNavigateToCredits = {
+                                currentSubScreen =
+                                    Screen.Credits
+                            },
+
+                            onLogout = onLogout
+                        )
+                    }
+
+                    // =================================
+                    // CREDITOS ORIGINALES
+                    // =================================
+
+                    Screen.Credits -> {
+
+                        CreditsScreen(
+
+                            onBack = {
+                                currentSubScreen = null
+                            }
+                        )
+                    }
+
+                    // =================================
+                    // OTRAS PANTALLAS
+                    // =================================
+
+                    else -> {
+
+                        if (webContent != null) {
+
+                            // WEB:
+                            // mantiene la misma barra
+                            // de navegacion original.
+
+                            webContent(activeScreen)
+
+                        } else {
+
+                            // ANDROID Y DESKTOP:
+                            // mantienen las pantallas
+                            // y los repositorios originales.
+
+                            when (activeScreen) {
+
+                                Screen.Home -> {
+
+                                    HomeScreen(
+                                        database = database,
+
+                                        onIrAGastos = {
+                                            navegar(Screen.Expenses)
+                                        },
+
+                                        onIrAPresupuestos = {
+                                            navegar(Screen.Budget)
+                                        }
+                                    )
+                                }
+
+                                Screen.Budget -> {
+
+                                    BudgetScreen()
+                                }
+
+                                Screen.Stats -> {
+
+                                    StatsScreen()
+                                }
+
+                                Screen.Expenses -> {
+
+                                    ExpensesDatabaseScreen(
+                                        database = database
+                                    )
+                                }
+
+                                else -> {
+
+                                    HomeScreen(
+                                        database = database,
+
+                                        onIrAGastos = {
+                                            navegar(Screen.Expenses)
+                                        },
+
+                                        onIrAPresupuestos = {
+                                            navegar(Screen.Budget)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
