@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,21 +20,42 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+
+import app.cash.sqldelight.db.SqlDriver
+
+import com.example.gastikmp.data.WebGastoDataSource
 import com.example.gastikmp.data.WebIndexedDbStorage
 import com.example.gastikmp.data.WebPasswordSecurity
+import com.example.gastikmp.data.WebSqlDelightDriverFactory
 import com.example.gastikmp.navigation.MainScaffold
+import com.example.gastikmp.presentation.ExpensesScreen
+
+import kotlinx.coroutines.isActive
+
+private class SesionFinancieraWeb {
+
+    var driver by mutableStateOf<SqlDriver?>(null)
+
+    var mensajeError by mutableStateOf<String?>(null)
+
+    var preparando by mutableStateOf(true)
+
+    fun cerrar() {
+        val anterior = driver
+        driver = null
+
+        if (anterior != null) {
+            runCatching {
+                anterior.close()
+            }
+        }
+    }
+}
 
 /**
- * GASTI KMP - WEB JAVASCRIPT
- *
- * Reutiliza el diseño de:
- * - LoginScreen
- * - RegisterScreen
- * - MainScaffold
- *
- * Las cuentas Web se guardan en IndexedDB.
- *
- * Android y Desktop mantienen SQLDelight.
+ * Gasti Web:
+ * autenticacion original y conexion financiera
+ * compartida durante la sesion.
  */
 @Composable
 fun WebAuthScreen() {
@@ -57,11 +80,69 @@ fun WebAuthScreen() {
         mutableStateOf<String?>(null)
     }
 
-    if (usuarioActual != null) {
+    if (usuarioActual != null && correoActual != null) {
 
-        // =====================================
-        // NAVEGACION ORIGINAL DE GASTI
-        // =====================================
+        val emailSesion = correoActual!!
+
+        val sesion = remember(emailSesion) {
+            SesionFinancieraWeb()
+        }
+
+        LaunchedEffect(sesion) {
+
+            sesion.preparando = true
+            sesion.mensajeError = null
+
+            try {
+
+                println(
+                    "GASTI WEB: verificando SQLite financiero..."
+                )
+
+                WebSqlDelightDriverFactory
+                    .verificarConexion()
+                    .getOrThrow()
+
+                if (isActive) {
+
+                    sesion.driver =
+                        WebSqlDelightDriverFactory.createDriver()
+
+                    println(
+                        "GASTI WEB: conexion financiera preparada"
+                    )
+                }
+
+            } catch (error: Exception) {
+
+                sesion.mensajeError =
+                    error.message
+                        ?: "No se pudo preparar SQLite"
+
+                println(
+                    "GASTI WEB: ERROR SQLITE - " +
+                            sesion.mensajeError
+                )
+
+            } finally {
+                sesion.preparando = false
+            }
+        }
+
+        DisposableEffect(sesion) {
+            onDispose {
+                sesion.cerrar()
+                println(
+                    "GASTI WEB: conexion financiera cerrada"
+                )
+            }
+        }
+
+        val fuenteGastos = remember(sesion.driver) {
+            sesion.driver?.let { driver ->
+                WebGastoDataSource(driver)
+            }
+        }
 
         MainScaffold(
             database = null,
@@ -74,18 +155,54 @@ fun WebAuthScreen() {
 
             webContent = { screen ->
 
-                ContenidoFinancieroWebPendiente(
-                    screen = screen,
-                    nombre = usuarioActual ?: ""
-                )
+                when {
+
+                    screen == Screen.Expenses &&
+                            fuenteGastos != null -> {
+
+                        ExpensesScreen(
+                            database = null,
+                            dataSource = fuenteGastos,
+                            usuarioEmail = emailSesion
+                        )
+                    }
+
+                    screen == Screen.Expenses &&
+                            sesion.preparando -> {
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+
+                            CircularProgressIndicator()
+
+                            Spacer(
+                                modifier = Modifier.height(16.dp)
+                            )
+
+                            Text("Preparando Gastos e ingresos...")
+                        }
+                    }
+
+                    else -> {
+
+                        ContenidoFinancieroWebPendiente(
+                            screen = screen,
+                            nombre = usuarioActual ?: "",
+                            preparando = sesion.preparando,
+                            conexionPreparada = sesion.driver != null,
+                            mensajeError = sesion.mensajeError
+                        )
+                    }
+                }
             }
         )
 
     } else if (mostrarRegistro) {
-
-        // =====================================
-        // REGISTRO ORIGINAL
-        // =====================================
 
         RegisterScreen(
             onNavigateBack = {
@@ -114,9 +231,7 @@ fun WebAuthScreen() {
                     }
 
                     val nombreExistente =
-                        almacenamiento.leer(
-                            "$claveBase:nombre"
-                        )
+                        almacenamiento.leer("$claveBase:nombre")
 
                     require(nombreExistente == null) {
                         "El correo ya esta registrado"
@@ -125,8 +240,6 @@ fun WebAuthScreen() {
                     val protegida =
                         seguridad.proteger(password)
 
-                    // Guardar hash y sal;
-                    // nunca la contrasena original.
                     almacenamiento.guardar(
                         "$claveBase:hash",
                         protegida.passwordHash
@@ -137,7 +250,6 @@ fun WebAuthScreen() {
                         protegida.passwordSalt
                     )
 
-                    // Guardar el nombre al final.
                     almacenamiento.guardar(
                         "$claveBase:nombre",
                         nombreNormalizado
@@ -153,18 +265,13 @@ fun WebAuthScreen() {
 
     } else {
 
-        // =====================================
-        // LOGIN ORIGINAL
-        // =====================================
-
         LoginScreen(
             onNavigateToRegister = {
                 mostrarRegistro = true
             },
 
             onLoginSuccess = {
-                // El usuario ya fue establecido
-                // por la autenticacion Web.
+                // Usuario establecido al autenticar.
             },
 
             autenticar = { email, password ->
@@ -178,28 +285,20 @@ fun WebAuthScreen() {
                         "usuario:$correoNormalizado"
 
                     val nombreGuardado =
-                        almacenamiento.leer(
-                            "$claveBase:nombre"
-                        )
+                        almacenamiento.leer("$claveBase:nombre")
 
                     val hashGuardado =
-                        almacenamiento.leer(
-                            "$claveBase:hash"
-                        )
+                        almacenamiento.leer("$claveBase:hash")
 
                     val saltGuardada =
-                        almacenamiento.leer(
-                            "$claveBase:salt"
-                        )
+                        almacenamiento.leer("$claveBase:salt")
 
                     if (
                         nombreGuardado == null ||
                         hashGuardado == null ||
                         saltGuardada == null
                     ) {
-                        error(
-                            "Correo o contrasena incorrectos"
-                        )
+                        error("Correo o contrasena incorrectos")
                     }
 
                     val claveCorrecta =
@@ -223,19 +322,13 @@ fun WebAuthScreen() {
     }
 }
 
-/**
- * Contenido provisional exclusivo para Web.
- *
- * La barra inferior y la navegacion
- * ya son las mismas de Android y Desktop.
- *
- * Las operaciones financieras reales
- * se conectaran en los siguientes pasos.
- */
 @Composable
 private fun ContenidoFinancieroWebPendiente(
     screen: Screen,
-    nombre: String
+    nombre: String,
+    preparando: Boolean,
+    conexionPreparada: Boolean,
+    mensajeError: String?
 ) {
 
     val titulo = when (screen) {
@@ -268,8 +361,7 @@ private fun ContenidoFinancieroWebPendiente(
 
             Text(
                 text = "¡Bienvenido, $nombre!",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
+                style = MaterialTheme.typography.titleLarge
             )
 
             Spacer(
@@ -277,10 +369,28 @@ private fun ContenidoFinancieroWebPendiente(
             )
         }
 
+        val mensaje = when {
+            mensajeError != null ->
+                "Error de conexión SQLite: $mensajeError"
+
+            preparando ->
+                "Preparando la conexión SQLite de Gasti Web..."
+
+            conexionPreparada ->
+                "Conexión SQLite financiera preparada."
+
+            else ->
+                "La conexión financiera no está disponible."
+        }
+
         Text(
-            text = "Estamos conectando los datos financieros de Gasti Web.",
+            text = mensaje,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (mensajeError != null) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
         )
 
         Spacer(
