@@ -34,10 +34,10 @@ import com.example.gastikmp.database.GastiDatabase
 import com.example.gastikmp.presentation.ExpensesScreen as ExpensesDatabaseScreen
 
 /**
- * Navegacion compartida de Gasti.
+ * Navegación compartida de Gasti.
  *
  * Permite que las pantallas internas
- * soliciten un cambio de pestana.
+ * soliciten un cambio de pestaña.
  *
  * Funciona en Android, Desktop y Web.
  */
@@ -48,7 +48,7 @@ val LocalGastiNavigate = compositionLocalOf<(Screen) -> Unit> {
 /**
  * GASTI KMP
  *
- * Navegacion principal compartida.
+ * Navegación principal compartida.
  *
  * Android y Desktop:
  * utilizan GastiDatabase.
@@ -56,9 +56,9 @@ val LocalGastiNavigate = compositionLocalOf<(Screen) -> Unit> {
  * Web:
  * utiliza webContent para mostrar
  * las pantallas financieras compartidas
- * con sus repositorios asincronos.
+ * con sus repositorios asíncronos.
  *
- * Se conservan Perfil y Creditos.
+ * Se conservan Perfil y Créditos.
  */
 @Composable
 fun MainScaffold(
@@ -79,7 +79,7 @@ fun MainScaffold(
         currentSubScreen ?: selectedTab
 
     /**
-     * Cambiar de pestana desde cualquier
+     * Cambiar de pestaña desde cualquier
      * pantalla dentro de MainScaffold.
      */
     val navegar: (Screen) -> Unit = { destino ->
@@ -128,10 +128,15 @@ fun MainScaffold(
 
                                     Text(
                                         when (screen) {
+
                                             Screen.Home -> "⌂"
+
                                             Screen.Budget -> "◇"
+
                                             Screen.Stats -> "▥"
+
                                             Screen.Expenses -> "$"
+
                                             else -> "●"
                                         }
                                     )
@@ -184,6 +189,7 @@ fun MainScaffold(
                         ProfileScreen(
 
                             onNavigateToCredits = {
+
                                 currentSubScreen =
                                     Screen.Credits
                             },
@@ -193,7 +199,7 @@ fun MainScaffold(
                     }
 
                     // =================================
-                    // CREDITOS ORIGINALES
+                    // CRÉDITOS ORIGINALES
                     // =================================
 
                     Screen.Credits -> {
@@ -207,30 +213,48 @@ fun MainScaffold(
                     }
 
                     // =================================
-                    // OTRAS PANTALLAS
+                    // PANTALLAS FINANCIERAS
                     // =================================
 
                     else -> {
 
                         if (webContent != null) {
 
-                            // WEB:
-                            // mantiene la misma barra
-                            // de navegacion original.
+                            // =================================
+                            // WEB
+                            // =================================
+                            //
+                            // Web utiliza sus fuentes de datos
+                            // asíncronas y mantiene la misma
+                            // navegación compartida.
+                            //
+                            // No modificamos esta parte.
 
                             webContent(activeScreen)
 
                         } else {
 
-                            // ANDROID Y DESKTOP:
-                            // mantienen las pantallas
-                            // y los repositorios originales.
+                            // =================================
+                            // ANDROID Y DESKTOP
+                            // =================================
+                            //
+                            // Todas las pantallas financieras
+                            // reciben la misma conexión
+                            // GastiDatabase.
+                            //
+                            // Esto permite consultar los
+                            // datos reales mediante SQLDelight.
 
                             when (activeScreen) {
+
+                                // =================================
+                                // INICIO
+                                // =================================
 
                                 Screen.Home -> {
 
                                     HomeScreen(
+
                                         database = database,
 
                                         onIrAGastos = {
@@ -243,15 +267,31 @@ fun MainScaffold(
                                     )
                                 }
 
+                                // =================================
+                                // PRESUPUESTOS
+                                // =================================
+
                                 Screen.Budget -> {
 
-                                    BudgetScreen()
+                                    BudgetScreen(
+                                        database = database
+                                    )
                                 }
+
+                                // =================================
+                                // ESTADÍSTICAS
+                                // =================================
 
                                 Screen.Stats -> {
 
-                                    StatsScreen()
+                                    StatsScreen(
+                                        database = database
+                                    )
                                 }
+
+                                // =================================
+                                // GASTOS E INGRESOS
+                                // =================================
 
                                 Screen.Expenses -> {
 
@@ -260,9 +300,14 @@ fun MainScaffold(
                                     )
                                 }
 
+                                // =================================
+                                // PANTALLA PREDETERMINADA
+                                // =================================
+
                                 else -> {
 
                                     HomeScreen(
+
                                         database = database,
 
                                         onIrAGastos = {
